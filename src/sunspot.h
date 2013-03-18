@@ -44,18 +44,23 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     //! Initialize this fitness function.
     template <typename RNG, typename EA>
     void initialize(RNG& rng, EA& ea) {
+        // this simply parses the geometry of the MKV network from the configuration
+        // file:
         mkv::parse_desc(get<MKV_DESC>(ea), _desc);
         
-        // read in the historical data for sunspot numbers, and split it into:
+        // input data can be found here (defined in config file or command line):
+        std::string filename=get<SUNSPOT_INPUT>(ea);
         
+        // read in the historical data for sunspot numbers, and split it into:
+
         // _input: a matrix where each row vector i is assumed to be the complete
         // **binary input vector** to the MKV network at time i.
-        _input.resize(1,1); // dummy initializer (testing)
+        _input.resize(1,1); // dummy initializer; replace with real size and data
         _input(0,0) = 1;
         
         // _observed: a vector where element i corresponds to the observed (real) sunspot
-        // number corresponding to row i in matrix _inputs.
-        _observed.resize(1);
+        // number corresponding to row i in _inputs.
+        _observed.resize(1); // dummy initializer; replace with real size and data
         _observed(0) = 1;
     }
     
@@ -70,7 +75,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         vector_type output(_observed.size());
         
         // run each row of _inputs through the MKV network for a single update,
-        // and gather the output into vector outputs:
+        // place the result in the output vector:
         for(std::size_t i=0; i<_input.size1(); ++i) {
             row_type r(_input,i);
             mkv::update(net, 1, r.begin());
@@ -80,7 +85,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             output(i) = static_cast<double>(algorithm::range_pair2int(net.begin_output(), net.end_output()));
         }
     
-        // fitness is 1.0/(1.0+RMSE between _observed and output):
+        // fitness is 1.0/(1.0+sqrt((observed-output)^2)) -- RMSE:
         bnu::vector<double> err = _observed - output;
         return 1.0/(1.0+sqrt(bnu::inner_prod(err,err)));
     }
