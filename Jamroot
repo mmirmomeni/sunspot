@@ -1,0 +1,14 @@
+import os ;
+local HOME = [ os.environ HOME ] ;
+
+use-project /libea : ../ealib/libea ;
+
+exe sunspot :
+    src/sunspot.cpp
+    /libea//libea
+    /libea//libea_runner
+    /libmkv//libmkv
+    : <include>./include <link>static
+    ;
+
+install dist : sunspot : <location>$(HOME)/bin ;
