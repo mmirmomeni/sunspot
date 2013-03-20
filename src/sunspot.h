@@ -55,7 +55,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
 
         // _input: a matrix where each row vector i is assumed to be the complete
         // **binary input vector** to the MKV network at time i.
-        _input.resize(1,1); // dummy initializer; replace with real size and data
+        _input.resize(1,9); // dummy initializer; replace with real size and data
         _input(0,0) = 1;
         
         // _observed: a vector where element i corresponds to the observed (real) sunspot
@@ -71,7 +71,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         mkv::markov_network net = mkv::make_markov_network(_desc, ind.repr().begin(), ind.repr().end(), rng, ea);
 
         // vector of outputs from the MKV network, initialized to the same size
-        // as R:
+        // as observed:
         vector_type output(_observed.size());
         
         // run each row of _inputs through the MKV network for a single update,
@@ -85,9 +85,9 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             output(i) = static_cast<double>(algorithm::range_pair2int(net.begin_output(), net.end_output()));
         }
     
-        // fitness is 1.0/(1.0+sqrt((observed-output)^2)) -- RMSE:
+        // fitness is 1.0/(1.0+sqrt(1/N*(observed-output)^2)) -- RMSE:
         bnu::vector<double> err = _observed - output;
-        return 1.0/(1.0+sqrt(bnu::inner_prod(err,err)));
+        return 1.0/(1.0+sqrt(1.0/static_cast<double>(err.size())*bnu::inner_prod(err,err)));
     }
 };
         
