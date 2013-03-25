@@ -231,7 +231,16 @@ int main(int argc, const char * argv[])
     delete [] SunSpotTotal;
     
     ofstream MyFile;
-    MyFile.open ("/Users/mirmomeny/Desktop/SunSpotNumberViaMarkovNetwork/MarkovNetworBinarykData.txt");
+    MyFile.open ("MarkovNetworkBinarykData.txt");
+    MyFile <<"This file contains the integer representation of sunspot numbers."<<endl;
+    MyFile<<"The first (n-1)th integers of each row represent the input SSNs for Markov network, and the last integer represents the corresponding output to those inputs (prediction target)."<<endl;
+    MyFile<<"This file contains sunspot number from "<<InitialYear<<" to " <<FinalYear<<"."<<endl;
+    
+    
+    MyFile <<"Number of data in this file is:"<<endl;
+    MyFile<<SSN.size()<<endl;
+    
+    
     SunSpotNumber TempSSN(TempArray);
     vector<int> TempInput;
     int TempOutput;
@@ -245,26 +254,29 @@ int main(int argc, const char * argv[])
         for (int j = 0 ; j < TempSSN.GetInputDimension() ; j++)
         {
             
-            int* TempBinary;
+            /* int* TempBinary;
             TempBinary = IntToBinary(TempInput[j]);
             
             for (int k = 0; k<9; k++) {
-                MyFile <<TempBinary[k]<<",";
-            }
+                MyFile <<TempBinary[k]<<" ";
+            } */
+            
+            MyFile << TempInput[j] << " ";
+            
             
         }
         
-        int* TempBinary = IntToBinary(TempOutput);
+        /* int* TempBinary = IntToBinary(TempOutput);
                 
         for (int k = 0; k<8; k++) {
-            MyFile <<TempBinary[k]<<",";
-        }
+            MyFile <<TempBinary[k]<<" ";
+        }*/
         
-        MyFile <<TempBinary[8]<<endl;
+        MyFile <<TempOutput<<endl;
     }
     
     MyFile.close();
-    
+    cout<<"Preprocessing is done :-)!" << endl;
     return 0;
 }
 
