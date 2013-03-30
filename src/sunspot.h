@@ -45,6 +45,86 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     matrix_type _input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
     matrix_type _observed; //!< Observed (real) historical sunspot numbers.
     vector_type _IntegerObserved;
+    vector_type _IntegerInput;
+    vector_type _IntegerObservedED;
+    
+    
+    //! Estimating the embedding dimension.
+	template <typename Embedding, typename Nonlinearity, typename EA>
+	unsigned embedding_dimension(Embedding& d , Nonlinearity& n , EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        // input data can be found here (defined in config file or command line):
+        std::string filename=get<SUNSPOT_INPUT>(ea);
+        std::ifstream MyFile (filename.c_str());
+        
+        
+        std::string Line;
+        int MatrixSize=0;
+        
+        if (MyFile.is_open())
+        {
+            for (int i = 1; i <= 4; i++)
+            {
+                getline (MyFile,Line);
+            }
+            MyFile>>MatrixSize;
+        }
+        else
+        {
+            std::cerr<<"Sorry, this file cannot be read."<<std::endl;
+            return 0;
+        }
+        
+        _IntegerInput.resize(MatrixSize - 1);
+        int TempSSN = 0;
+        MyFile >>TempSSN;
+        
+        for (int i = 0; i < MatrixSize - 1; i++)
+        {
+            _IntegerInput(i) = TempSSN;
+            MyFile >>TempSSN;
+            _IntegerObservedED(i) = TempSSN;
+            
+        }
+        
+        const int MAX_ED = 7;
+        const int MAX_NONLINEARITY = 5;
+        vector_type _Parameters;
+        
+        int NumParameters = 0;
+        double EstimatedError [boost::math::factorial(d + n)/(boost::math::factorial(d)*boost::math::factorial(n))];
+        
+        for (int i = 1; i < MAX_ED;i++)
+        {
+            for (int j = 1;j < MAX_NONLINEARITY;j++)
+            {
+                NumParameters = boost::math::factorial(i + j)/(boost::math::factorial(i)*boost::math::factorial(j));
+                _Parameters.resize(NumParameters);
+                
+                
+            }
+        }
+        
+    
+    
+    unsigned f = 0;
+    return f;
+    }
+    
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     //! Initialize this fitness function.
     template <typename RNG, typename EA>
