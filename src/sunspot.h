@@ -21,6 +21,8 @@
 #define _SUNSPOT_H_
 
 #include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/lu.hpp>
+#include <boost/numeric/ublas/io.hpp>
 #include <cmath>
 #include <ea/fitness_function.h>
 #include <ea/meta_data.h>
@@ -29,8 +31,9 @@
 #include <string>
 #include <iostream>
 
+using namespace boost::numeric::ublas;
 using namespace ea;
-
+using namespace std;
 // Common meta-data needed for sunspot prediction.
 LIBEA_MD_DECL(SUNSPOT_INPUT, "sunspot.input", std::string);
 
@@ -90,17 +93,23 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         const int MAX_ED = 7;
         const int MAX_NONLINEARITY = 5;
         vector_type _Parameters;
+        matrix_type _Training;
         
         int NumParameters = 0;
-        double EstimatedError [boost::math::factorial(d + n)/(boost::math::factorial(d)*boost::math::factorial(n))];
+        double EstimatedError [boost::math::factorial<int>(d + n)/(boost::math::factorial<int>(d)*boost::math::factorial<int>(n))];
         
-        for (int i = 1; i < MAX_ED;i++)
+        for (int i = 1; i < MAX_ED; i++)
         {
-            for (int j = 1;j < MAX_NONLINEARITY;j++)
+            for (int j = 1; j < MAX_NONLINEARITY; j++)
             {
-                NumParameters = boost::math::factorial(i + j)/(boost::math::factorial(i)*boost::math::factorial(j));
+                NumParameters = boost::math::factorial<int>(i + j) / (boost::math::factorial<int>(i) * boost::math::factorial<int>(j));
                 _Parameters.resize(NumParameters);
+                _Training.resize(MatrixSize - i - 1 , NumParameters);
                 
+                for (int k = 0; k < MatrixSize - i - 1; k++)
+                {
+                    
+                }
                 
             }
         }
