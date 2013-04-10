@@ -37,6 +37,33 @@ using namespace std;
 // Common meta-data needed for sunspot prediction.
 LIBEA_MD_DECL(SUNSPOT_INPUT, "sunspot.input", std::string);
 
+/* Matrix inversion routine.
+ Uses lu_factorize and lu_substitute in uBLAS to invert a matrix */
+template<class T>
+bool InvertMatrix(const matrix<T>& input, matrix<T>& inverse)
+{
+	typedef permutation_matrix<std::size_t> pmatrix;
+    
+	// create a working copy of the input
+	matrix<T> A(input);
+    
+	// create a permutation matrix for the LU-factorization
+	pmatrix pm(A.size1());
+    
+	// perform LU-factorization
+	int res = lu_factorize(A, pm);
+	if (res != 0)
+		return false;
+    
+	// create identity matrix of "inverse"
+	inverse.assign(identity_matrix<T> (A.size1()));
+    
+	// backsubstitute to get the inverse
+	lu_substitute(A, pm, inverse);
+    
+	return true;
+}
+
 /*! Fitness function for sunspot number prediction.
  */
 struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, absoluteS, stochasticS> {
@@ -92,25 +119,38 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         
         const int MAX_ED = 7;
         const int MAX_NONLINEARITY = 5;
-        vector_type _Parameters;
+        matrix_type _Parameters;
         matrix_type _Training;
+        matrix_type _TrainVector;
+        vector_type _TrainError;
+        
+        _TrainError.resize(MAX_ED * MAX_NONLINEARITY - 1);
         
         int NumParameters = 0;
         double EstimatedError [boost::math::factorial<int>(d + n)/(boost::math::factorial<int>(d)*boost::math::factorial<int>(n))];
         
-        for (int i = 1; i < MAX_ED; i++)
+        for (int j = 1; j <= MAX_NONLINEARITY; j++)
         {
-            for (int j = 1; j < MAX_NONLINEARITY; j++)
+            for (int i = 1; i <= MAX_ED; i++)
             {
                 NumParameters = boost::math::factorial<int>(i + j) / (boost::math::factorial<int>(i) * boost::math::factorial<int>(j));
-                _Parameters.resize(NumParameters);
+                _Parameters.resize(NumParameters,1);
                 _Training.resize(MatrixSize - i - 1 , NumParameters);
+                _TrainVector.resize(MatrixSize - i - 1,1);
                 
                 for (int k = 0; k < MatrixSize - i - 1; k++)
                 {
                     
                 }
                 
+                matrix_type _TrainingTranspose = boost::numeric::ublas::trans(_Training);
+                matrix_type _TrainingSquare    = boost::numeric::ublas::prod(_TrainingTranspose, _Training);
+                matrix_type _TrainingInverse;
+                _TrainingInverse.resize(NumParameters , NumParameters);
+                
+                InvertMatrix(_TrainingSquare, _TrainingInverse);
+                matrix_type _LeftMatrix = boost::numeric::ublas::prod(_TrainingTranspose, _Training);
+                _Parameters = boost::numeric::ublas::prod(_LeftMatrix, _TrainVector);
             }
         }
         
