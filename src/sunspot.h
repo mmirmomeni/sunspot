@@ -121,11 +121,12 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         const int MAX_NONLINEARITY = 4;
         matrix_type _Parameters;
         matrix_type _Training;
+        matrix_type _TrainingEstimationMatrix;
         matrix_type _TrainVector;
         vector_type _TrainError;
         
         _TrainError.resize(MAX_ED * MAX_NONLINEARITY - 1);
-        
+        int ParameterOrder [MAX_NONLINEARITY][MAX_ED] = {{1,2,3,4,5,6,7},{8,10,13,17,22,28,35},{36,39,45,55,70,91,119},{120,124,134,154,189,245,329}};
         int NumParameters = 0;
         //double EstimatedError [boost::math::factorial<int>(d + n)/(boost::math::factorial<int>(d)*boost::math::factorial<int>(n))];
       
@@ -141,26 +142,32 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
                 _Training(i,j) = _IntegerObservedED(i + MAX_ED - j);
            
             _Training(i,8)   = _IntegerObservedED(i + MAX_ED - 1)^2;
+            
             _Training(i,9)   = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2);
             _Training(i,10)  = _IntegerObservedED(i + MAX_ED - 2)^2;
+            
             _Training(i,11)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,12)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,13)  = _IntegerObservedED(i + MAX_ED - 3)^2;
+            
             _Training(i,14)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,15)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,16)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,17)  = _IntegerObservedED(i + MAX_ED - 4)^2;
+            
             _Training(i,18)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,19)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,20)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,21)  = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,22)  = _IntegerObservedED(i + MAX_ED - 5)^2;
+            
             _Training(i,23)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,24)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,25)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,26)  = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,27)  = _IntegerObservedED(i + MAX_ED - 5)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,28)  = _IntegerObservedED(i + MAX_ED - 6)^2;
+            
             _Training(i,29)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,30)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,31)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 7);
@@ -170,16 +177,22 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,35)  = _IntegerObservedED(i + MAX_ED - 7)^2;
             
             
+            
+            
+            
             _Training(i,36)  = _IntegerObservedED(i + MAX_ED - 1)^3;
+            
             _Training(i,37)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2);
             _Training(i,38)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2)^2;
             _Training(i,39)  = _IntegerObservedED(i + MAX_ED - 2)^3;
+            
             _Training(i,40)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,41)  = _IntegerObservedED(i + MAX_ED - 2)^2*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,42)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,43)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 3)^2;
             _Training(i,44)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3)^2;
             _Training(i,45)  = _IntegerObservedED(i + MAX_ED - 3)^3;
+            
             _Training(i,46)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,47)  = _IntegerObservedED(i + MAX_ED - 2)^2*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,48)  = _IntegerObservedED(i + MAX_ED - 3)^3*_IntegerObservedED(i + MAX_ED - 4);
@@ -190,6 +203,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,53)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 4)^2;
             _Training(i,54)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4)^2;
             _Training(i,55)  = _IntegerObservedED(i + MAX_ED - 4)^3;
+            
             _Training(i,56)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,57)  = _IntegerObservedED(i + MAX_ED - 2)^2*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,58)  = _IntegerObservedED(i + MAX_ED - 3)^2*_IntegerObservedED(i + MAX_ED - 5);
@@ -205,6 +219,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,68)  = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 5)^2;
             _Training(i,69)  = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 5)^2;
             _Training(i,70)  = _IntegerObservedED(i + MAX_ED - 5)^3;
+            
             _Training(i,71)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,72)  = _IntegerObservedED(i + MAX_ED - 2)^2*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,73)  = _IntegerObservedED(i + MAX_ED - 3)^2*_IntegerObservedED(i + MAX_ED - 6);
@@ -226,6 +241,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,89)  = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 6)^2;
             _Training(i,90)  = _IntegerObservedED(i + MAX_ED - 5)*_IntegerObservedED(i + MAX_ED - 6)^2;
             _Training(i,91)  = _IntegerObservedED(i + MAX_ED - 6)^3;
+            
             _Training(i,92)  = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,93)  = _IntegerObservedED(i + MAX_ED - 2)^2*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,94)  = _IntegerObservedED(i + MAX_ED - 3)^2*_IntegerObservedED(i + MAX_ED - 7);
@@ -256,11 +272,17 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,119) = _IntegerObservedED(i + MAX_ED - 7)^3;
             
             
+            
+            
+            
+            
             _Training(i,120) = _IntegerObservedED(i + MAX_ED - 1)^4;
+            
             _Training(i,121) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 2);
             _Training(i,122) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)^2;
             _Training(i,123) = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2)^3;
             _Training(i,124) = _IntegerObservedED(i + MAX_ED - 2)^4;
+            
             _Training(i,125) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,126) = _IntegerObservedED(i + MAX_ED - 2)^3*_IntegerObservedED(i + MAX_ED - 3);
             _Training(i,127) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3);
@@ -271,6 +293,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,132) = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 3)^3;
             _Training(i,133) = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3)^3;
             _Training(i,134) = _IntegerObservedED(i + MAX_ED - 3)^4;
+            
             _Training(i,135) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,136) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,137) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4);
@@ -291,6 +314,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,152) = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 4)^3;
             _Training(i,153) = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4)^3;
             _Training(i,154) = _IntegerObservedED(i + MAX_ED - 4)^4;
+            
             _Training(i,155) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,156) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,157) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 5);
@@ -311,7 +335,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,172) = _IntegerObservedED(i + MAX_ED - 3)^2*_IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,173) = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4)^2*_IntegerObservedED(i + MAX_ED - 5);
             _Training(i,174) = _IntegerObservedED(i + MAX_ED - 4)^3*_IntegerObservedED(i + MAX_ED - 5);
-            _Training(i,175) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 6)^2;
+            _Training(i,175) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 5)^2;
             _Training(i,176) = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 5)^2;
             _Training(i,177) = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 5)^2;
             _Training(i,178) = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 5)^2;
@@ -326,6 +350,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,187) = _IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 3)^3;
             _Training(i,188) = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 5)^3;
             _Training(i,189) = _IntegerObservedED(i + MAX_ED - 5)^4;
+            
             _Training(i,190) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,191) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 6);
             _Training(i,192) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 6);
@@ -382,6 +407,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,243) = _IntegerObservedED(i + MAX_ED - 4)*_IntegerObservedED(i + MAX_ED - 6)^3;
             _Training(i,244) = _IntegerObservedED(i + MAX_ED - 5)*_IntegerObservedED(i + MAX_ED - 6)^3;
             _Training(i,245) = _IntegerObservedED(i + MAX_ED - 6)^4;
+            
             _Training(i,246) = _IntegerObservedED(i + MAX_ED - 1)^3*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,247) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 7);
             _Training(i,248) = _IntegerObservedED(i + MAX_ED - 1)^2*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 7);
@@ -468,42 +494,49 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _Training(i,329) = _IntegerObservedED(i + MAX_ED - 7)^4;
             _TrainVector(i,1)  = _IntegerObservedED(i + MAX_ED);
         }
+        
+        matrix_type TempMatrix(MatrixSize - MAX_ED - 1 , 1 , 1);
+        int ColumnCounter;
     
-    
-        /*for (int j = 1; j <= MAX_NONLINEARITY; j++)
+        for (int j = 1; j <= MAX_NONLINEARITY; j++)
         {
             for (int i = 1; i <= MAX_ED; i++)
             {
                 NumParameters = boost::math::factorial<int>(i + j) / (boost::math::factorial<int>(i) * boost::math::factorial<int>(j));
                 _Parameters.resize(NumParameters,1);
-                _Training.resize(MatrixSize - i - 1 , NumParameters);
-                _TrainVector.resize(MatrixSize - i - 1,1);
+                _TrainingEstimationMatrix.resize(MatrixSize - MAX_ED - 1 , NumParameters);
+                ColumnCounter = 0;
+                column(_TrainingEstimationMatrix, ColumnCounter) = column(TempMatrix, 1);
                 
-                for (int k = 0; k < MatrixSize - i - 1; k++)
+                for (int p = 0; p < j ; p++)
                 {
-                    _Training(k,0) = 1;
-                    
-                    for (int NonlinearityIteration = 1; NonlinearityIteration <= j; NonlinearityIteration++)
+                    for (int k = ParameterOrder[p][0];k <= ParameterOrder[p][i-1];k++)
                     {
-                        for (int EmbeddingIteration = 1; EmbeddingIteration <= j; EmbeddingIteration++)
-                        {
-                            _Training(k,EmbeddingIteration)
-                        }
+                        ColumnCounter++;
+                        column(_TrainingEstimationMatrix, ColumnCounter) = column(_Training, k);
                     }
                 }
-                
-                matrix_type _TrainingTranspose = boost::numeric::ublas::trans(_Training);
-                matrix_type _TrainingSquare    = boost::numeric::ublas::prod(_TrainingTranspose, _Training);
+                                
+                matrix_type _TrainingTranspose = boost::numeric::ublas::trans(_TrainingEstimationMatrix);
+                matrix_type _TrainingSquare    = boost::numeric::ublas::prod(_TrainingTranspose, _TrainingEstimationMatrix);
                 matrix_type _TrainingInverse;
                 _TrainingInverse.resize(NumParameters , NumParameters);
                 
                 InvertMatrix(_TrainingSquare, _TrainingInverse);
-                matrix_type _LeftMatrix = boost::numeric::ublas::prod(_TrainingTranspose, _Training);
+                matrix_type _LeftMatrix = boost::numeric::ublas::prod(_TrainingTranspose, _TrainingEstimationMatrix);
                 _Parameters = boost::numeric::ublas::prod(_LeftMatrix, _TrainVector);
+                
+                
+                /*****************
+                 Error Calculation
+                 *****************/
+                
+                
+                
+                
             }
         }
         
-    */
     
     unsigned f = 0;
     return f;
