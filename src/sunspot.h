@@ -23,6 +23,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/lu.hpp>
 #include <boost/numeric/ublas/io.hpp>
+#include <boost/numeric/ublas/matrix_proxy.hpp>
 #include <cmath>
 #include <ea/fitness_function.h>
 #include <ea/meta_data.h>
@@ -30,6 +31,7 @@
 #include <fstream>
 #include <string>
 #include <iostream>
+#include <limits>
 
 using namespace boost::numeric::ublas;
 using namespace ea;
@@ -70,7 +72,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     typedef boost::numeric::ublas::matrix<int> matrix_type; //!< Type for matrix that will store raw sunspot numbers.
     typedef boost::numeric::ublas::matrix_row<matrix_type> row_type; //!< Row type for the matrix.
     typedef boost::numeric::ublas::vector<int> vector_type; //!< Type for a vector of sunspot numbers.
-
+    typedef boost::numeric::ublas::vector<double> vector_type_distance; //!< Type for a vector of sunspot numbers.
+    
     mkv::markov_network::desc_type _desc; //!< Description of the markov network we'll be using.
     matrix_type _input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
     matrix_type _observed; //!< Observed (real) historical sunspot numbers.
@@ -80,7 +83,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     
     
     
-    //! Estimating the embedding dimension.
+    // Estimating the embedding dimension.
 	template <typename Embedding, typename Nonlinearity, typename EA>
 	unsigned embedding_dimension(Embedding& d , Nonlinearity& n , EA& ea) {
         namespace bnu=boost::numeric::ublas;
@@ -121,11 +124,11 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         const int MAX_ED = 7;
         const int MAX_NONLINEARITY = 4;
         matrix_type _Parameters;
-        matrix_type _Training;
         matrix_type _TrainingEstimationMatrix;
-        matrix_type _TrainVector;
         matrix_type _IntegerEstimatedED;
         vector_type _TrainError;
+        matrix_type _Training;
+        matrix_type _TrainVector;
         
         
         _TrainError.resize(MAX_ED * MAX_NONLINEARITY);
@@ -541,7 +544,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         }
     
     unsigned f = 0;
-    double MinError = 100000000000000000000000000;
+    double MinError = std::numeric_limits<double>::max();
     
     for (unsigned i = 0 ; i < _TrainError.size() ; i++)
     {
@@ -560,16 +563,101 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     
     
     
+    // Estimating the Lyapunov exponent first approach.
+	template <typename Embedding, typename Nonlinearity, typename Lyapunov, typename EA>
+	double lyapunov_estimation(Embedding& d , Nonlinearity& n , Lyapunov& l, EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        // input data can be found here (defined in config file or command line):
+        double f = 0.0;
+        return f;
+    }
+    
+    
+    
+    // Estimating the Lyapunov exponent second approach.
+	template <typename Embedding, typename Lyapunov, typename EA>
+	double lyapunov_estimation(Embedding& d , Lyapunov& l, EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        // input data can be found here (defined in config file or command line):
+        
+        matrix_type _InputMatrix;
+        matrix_type _InitialMatrix;
+        vector_type_distance _EuclideanDistance;
+        _InputMatrix.resize(_IntegerInput.size() - d + 1, d);
+        _InitialMatrix.resize(_IntegerInput.size() - d + 1, d);
+        _EuclideanDistance.resize(_IntegerInput.size() - d + 1);
+        _EuclideanDistance(0) = std::numeric_limits<double>::max();
+        
+        for (int i = 0 ; i < d ; i++)
+        {
+            matrix_type ShiftedTemp(_IntegerInput.begin() + i, _IntegerInput.end() - d + i + 1 , 1);
+            matrix_type Temp(_IntegerInput.begin() , _IntegerInput.end() - d + 1 , 1 , _IntegerInput(i));
+            column(_InputMatrix, i) = column(ShiftedTemp , 0);
+            column(_InitialMatrix, i) = column(Temp , 0);
+        }
+        
+        
+        unsigned Index;
+        l = 0; //Largest LE
+        double MinDistance = std::numeric_limits<double>::max();
+        
+        
+        double EvolZero;
+        double EvolPrime;
+        
+        for (unsigned i = 0 ; i < _EuclideanDistance.size() - 1; i++)
+        {
+            
+            matrix_row<matrix_type> InitialRow(_InitialMatrix, i);
+            
+            for (int j = 0 ; j < _EuclideanDistance.size() ; j++)
+            {
+                matrix_row<matrix_type> InputRow(_InputMatrix, j);
+                _EuclideanDistance(j) = norm_2(InputRow - InitialRow);
+            }
+            
+            _EuclideanDistance(i) = MinDistance;
+            
+            Index = 0;
+            for (unsigned j = 0 ; j < _EuclideanDistance.size() ; j++)
+            {
+                if (_EuclideanDistance(j) < MinDistance)
+                {
+                    MinDistance = _EuclideanDistance(j);
+                    Index = j;
+                }
+            }
+            
 
+            
+            matrix_row<matrix_type> EvolRowZero(_InputMatrix, i);
+            matrix_row<matrix_type> EvolRowOne (_InputMatrix, Index);
+            
+            EvolZero = norm_2(EvolRowOne - EvolRowZero);
+            
+            
+            matrix_row<matrix_type> EvolRowPrime    (_InputMatrix, i + 1);
+            matrix_row<matrix_type> EvolRowPrimeOne (_InputMatrix, Index + 1);
+            
+            EvolPrime = norm_2(EvolRowPrimeOne - EvolRowPrime);
+            
+            l += log2(EvolPrime/EvolZero)/(_EuclideanDistance.size() - 1);
+
+        }
+        
+        return l;
+    }
     
     
     
-    
-    
-    
-    
-    
-    
+    // Estimating the prediction horizon.
+	template <typename PredictionHorizon, typename Lyapunov, typename EA>
+	unsigned prediction_horizon_estimation(PredictionHorizon& h , Lyapunov& l, EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        // input data can be found here (defined in config file or command line):
+        unsigned f = 0;
+        return f;
+    }
     
     
     
