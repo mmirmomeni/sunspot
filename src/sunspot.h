@@ -79,6 +79,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     vector_type _IntegerObservedED;
     
     
+    
     //! Estimating the embedding dimension.
 	template <typename Embedding, typename Nonlinearity, typename EA>
 	unsigned embedding_dimension(Embedding& d , Nonlinearity& n , EA& ea) {
@@ -123,16 +124,18 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         matrix_type _Training;
         matrix_type _TrainingEstimationMatrix;
         matrix_type _TrainVector;
+        matrix_type _IntegerEstimatedED;
         vector_type _TrainError;
         
-        _TrainError.resize(MAX_ED * MAX_NONLINEARITY - 1);
+        
+        _TrainError.resize(MAX_ED * MAX_NONLINEARITY);
         int ParameterOrder [MAX_NONLINEARITY][MAX_ED] = {{1,2,3,4,5,6,7},{8,10,13,17,22,28,35},{36,39,45,55,70,91,119},{120,124,134,154,189,245,329}};
         int NumParameters = 0;
-        //double EstimatedError [boost::math::factorial<int>(d + n)/(boost::math::factorial<int>(d)*boost::math::factorial<int>(n))];
-      
+        
         NumParameters = boost::math::factorial<int>(MAX_ED + MAX_NONLINEARITY) / (boost::math::factorial<int>(MAX_ED) * boost::math::factorial<int>(MAX_NONLINEARITY));
         _Training.resize(MatrixSize - MAX_ED - 1 , NumParameters);
         _TrainVector.resize(MatrixSize - MAX_ED - 1,1);
+        _IntegerEstimatedED.resize(MatrixSize - MAX_ED - 1,1);;
         
         for (int i = 0; i < MatrixSize - MAX_ED - 1; i++)
         {
@@ -531,14 +534,27 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
                  Error Calculation
                  *****************/
                 
-                
-                
-                
+                _IntegerEstimatedED = boost::numeric::ublas::prod (_TrainingEstimationMatrix , _Parameters);
+                bnu::vector<double> err = column(_IntegerEstimatedED,1) - column(_TrainVector , 1);
+                _TrainError((j - 1) * MAX_ED + (i - 1)) = sqrt(1/static_cast<double>(err.size()) * bnu::inner_prod(err,err));
             }
         }
-        
     
     unsigned f = 0;
+    double MinError = 100000000000000000000000000;
+    
+    for (unsigned i = 0 ; i < _TrainError.size() ; i++)
+    {
+        if (_TrainError(i) < MinError)
+        {
+            MinError = _TrainError(i);
+            f = i % MAX_ED + 1;
+            d = i % MAX_ED + 1;
+            n = i / MAX_ED + 1;
+
+        }
+    }
+        
     return f;
     }
     
