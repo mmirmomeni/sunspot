@@ -1047,7 +1047,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             
         }
         
-        double f = _LargestLyapunov(MatrixSize - MAX_ED - 1);
+        double f = _LargestLyapunov(MatrixSize - MAX_ED - 2);
         return f;
     }
     
