@@ -100,7 +100,6 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     matrix_type_estimated _Training;
     
     
-    
     // Estimating the embedding dimension.
 	template <typename Embedding, typename Nonlinearity, typename EA>
 	unsigned embedding_dimension(Embedding& d , Nonlinearity& n , EA& ea) {
@@ -579,10 +578,73 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
     }
     
     
+    // QR decomposition.
+	template <typename MatrixQ, typename MatrixR, typename MatrixA>
+	bool QR_factorization(MatrixQ& Q , MatrixR& R , MatrixA& JacobianMatrix) {
+        
+        namespace bnu=boost::numeric::ublas;
+        int d = JacobianMatrix.size1();
+        
+        for (int i = 0; i < d - 1; i++)
+        {
+            for (int j = 0; j < d; j++)
+            {
+                R(i,j)=0;
+            }
+        }
+        
+        column(Q, 0) = column(JacobianMatrix , 0);
+        matrix_type_estimated _TempNorm = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(Q, 0)), column(Q, 0));
+        matrix_type_estimated _InvertTerm;
+        matrix_type_estimated _TempProject;
+        matrix_type_estimated _Projection;
+        _InvertTerm.resize(1,1);
+        InvertMatrix(_TempNorm, _InvertTerm);
+        column(Q, 0) = boost::numeric::ublas::prod(_InvertTerm, column(Q, 0));
+        
+        for (int i = 0; i < d - 1; i++)
+        {
+            for (int j = 0; j < i; j++)
+            {
+                R(i,j)=0;
+            }
+        }
+        
+        for (int i = 1; i < d - 1; i++)
+        {
+            column(Q, i) = column(JacobianMatrix , i);
+        
+            for (int j = 0; j < d; j++)
+            {
+                _TempProject  = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(JacobianMatrix, i)), column(Q, j));
+                _Projection   = boost::numeric::ublas::prod(_TempProject, _column(JacobianMatrix, i));
+                column(Q, i) -= _Projection;
+            }
+            
+            _TempNorm = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(Q, i)), column(Q, i));
+            InvertMatrix(_TempNorm, _InvertTerm);
+            column(Q, i) = boost::numeric::ublas::prod(_InvertTerm, column(Q, i));
+        }
+        
+        
+        for (int i = 0; i < d - 1; i++)
+        {
+            for (int j = i; j < d; j++)
+            {
+                _TempProject  = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(JacobianMatrix, i)), column(Q, j));
+                _Projection   = boost::numeric::ublas::prod(_TempProject, _column(JacobianMatrix, i));
+                R(i, j) -= _Projection(0,0);
+            }
+        }
+        
+        return true;
+    }
+    
+    
     
     // Estimating the Lyapunov exponent first approach.
-	template <typename Embedding, typename Nonlinearity, typename Lyapunov, typename EA>
-	double lyapunov_estimation(Embedding& d , Nonlinearity& n , Lyapunov& l, EA& ea) {
+	template <typename Embedding, typename Nonlinearity, typename Lyapunov, typename LargestLyapunov , typename EA>
+	double lyapunov_estimation(Embedding& d , Nonlinearity& n , Lyapunov& _LEs , LargestLyapunov& _LargestLyapunov , EA& ea) {
         namespace bnu=boost::numeric::ublas;
         // input data can be found here (defined in config file or command line):
         
@@ -590,8 +652,12 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
          Initialization
          **************/
         
+        for (int k = 0 ; k < d ; k++)
+            _LEs(k) = 0;
+        
         int NumParameters = boost::math::factorial<int>(d + n) / (boost::math::factorial<int>(d) * boost::math::factorial<int>(n));
         
+        bool label;
         matrix_type_estimated _Parameters;
         matrix_type_estimated _Regressor;
         matrix_type_estimated _RegressorTranspose;
@@ -605,8 +671,13 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
         matrix_type_estimated _InverseDenominator;
         matrix_type_estimated _EvolutionTerm;
         matrix_type_estimated _Jacobian;
+        matrix_type_estimated _Q;
+        matrix_type_estimated _R;
         
         _Jacobian.resize(d,d);
+        _Q.resize(d,d);
+        _R.resize(d,d);
+        _Regressor.resize(NumParameters,1);
         
         
         for (int i = 0; i < d - 1; i++)
@@ -645,6 +716,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
                 _Variance(i,j)=0;
             _Variance(i,i)=1000000;
         }
+        
         
         /**********
          Estimation
@@ -966,10 +1038,16 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
                     
             }
             
+            label = QR_factorization(_Q , _R , _Jacobian);
+            
+            for (int k = 0 ; k < d ; k++)
+                _LEs(k) = (i * _LEs(k) + log(_R(k,k)))/(i+1);
+            
+            _LargestLyapunov(i) = _LEs(0);
+            
         }
         
-        
-        double f = 0.0;
+        double f = _LargestLyapunov(MatrixSize - MAX_ED - 1);
         return f;
     }
     
