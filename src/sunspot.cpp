@@ -26,7 +26,7 @@
 #include <ea/markov_network.h>
 
 #include "sunspot.h"
-using namespace ea;
+using namespace ealib;
 
 //! Configurator.
 template <typename EA>
@@ -76,9 +76,11 @@ public:
         
         // sunspot options
         add_option<SUNSPOT_INPUT>(this);
+        add_option<SUNSPOT_PREDICTION_HORIZON>(this);
     }
     
     virtual void gather_tools() {
+        add_tool<test_sunspot>(this);
     }
     
     virtual void gather_events(EA& ea) {
