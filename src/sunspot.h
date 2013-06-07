@@ -118,8 +118,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             mkv::update(net, 1, r.begin());
             
             for(std::size_t j=0; j<ph; ++j) {
-                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*_input.size2(),
-                                                        net.begin_output()+(j+1)*_input.size2());
+                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*_input.size2(),
+                                                        net.begin_output()+(j+1)*2*_input.size2());
             }
         }
     };
