@@ -2,6 +2,9 @@
 #define _SUNSPOT_H_
 
 #include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/vector.hpp>
+#include <boost/numeric/ublas/vector_proxy.hpp>
 #include <cmath>
 #include <ea/fitness_function.h>
 #include <ea/meta_data.h>
@@ -115,8 +118,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             mkv::update(net, 1, r.begin());
             
             for(std::size_t j=0; j<ph; ++j) {
-                output(i,j) = static_cast<double>(algorithm::range_pair2int(net.begin_output()+j*_input.size2(),
-                                                                            net.begin_output()+(j+1)*_input.size2()));
+                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*_input.size2(),
+                                                        net.begin_output()+(j+1)*_input.size2());
             }
         }
     };
@@ -125,6 +128,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     template <typename Individual, typename RNG, typename EA>
     double operator()(Individual& ind, RNG& rng, EA& ea) {
         namespace bnu=boost::numeric::ublas;
+        typedef bnu::vector<int> int_vector_type;
         matrix_type output;
         test(ind, output, rng, ea);
         
@@ -132,11 +136,29 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         double rmse=0.0;
         for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
             column_type c(output,i);
+            assert(c.size() == _IntegerObserved.size());
             
-            // careful; have to lag these correctly...
-            bnu::vector<int> err = _IntegerObserved - c;
+            // given:
+            // input | observed | output (predictions)
+            //                  | ph0 ph1 ph2 ph3...
+            // -------------------------------------
+            // i0    | i1       | o1,1 o1,2 o1,3 o1,4
+            // i1    | i2       | o2,1 o2,2 o2,3 o2,4
+            // i2    | i3       | o3,1 o3,2 o3,3 o3,4
+            //
+            // we need to match the columns of the output matrix with the
+            // appropriate range in the "observed" column, e.g.:
+            //
+            // err += observed(i1,i2,i3...) - output(o1,1, o2,1, o3,1...)
+            // err += observed(i2,i3,i4...) - output(o1,2, o2,2, o3,2...)
+            //
+            // note that as i increases, we're dropping elements off the front
+            // of the observed, and the back of the output matrix.
+            vector_type err =
+            bnu::vector_range<vector_type>(_IntegerObserved, bnu::range(i,_IntegerObserved.size()))
+            - bnu::vector_range<column_type>(c, bnu::range(0,c.size()-i));
             
-            rmse += sqrt(bnu::inner_prod(err,err) / static_cast<double>(err.size()));
+            rmse += sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
         }
         
         return 100.0 / (1.0 + rmse);
