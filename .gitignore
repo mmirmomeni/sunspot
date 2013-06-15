@@ -20,3 +20,5 @@ build
 dist
 *.plist
 *.swp
+.Rhistory
+var

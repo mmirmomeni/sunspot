@@ -61,7 +61,15 @@
       <CommandLineArguments>
          <CommandLineArgument
             argument = "-c ../etc/ealib.cfg --ea.rng.seed=1 --with-time"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-l checkpoint-50000.xml.gz --analyze mkv_reduced_graph"
             isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-l checkpoint-50000.xml.gz --analyze test_sunspot"
+            isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>

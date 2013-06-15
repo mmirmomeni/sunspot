@@ -81,6 +81,7 @@ public:
     
     virtual void gather_tools() {
         add_tool<test_sunspot>(this);
+        add_tool<mkv::mkv_reduced_graph>(this);
     }
     
     virtual void gather_events(EA& ea) {
