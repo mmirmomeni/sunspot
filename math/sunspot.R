@@ -1,3 +1,18 @@
+source("~/research/share/math/common.R")
+
+
+setwd("~/research/var/sunspot/002-multi")
+R = rbind(load.files(find.files("tb0", "fitness.dat.gz")))
+R$normalized_fitness = 100.0 / R$max_fitness - 1.0
+
+quartz(width=6,height=3.75)
+g = ggplot(data=subset(R,update%%100==0), aes(x=update, y=normalized_fitness)) 
+g + geom_line(aes(color=trial))
+
+
+
+
+
 
 ### fitness
 setwd("~/research/var/sunspot/002-multi")
@@ -11,7 +26,7 @@ g + geom_line(aes(color=trial))
 
 ### test results
 setwd("/Users/dk/research/src/sunspot")
-D = rbind(load.files(find.files("tmp", "test_sunspot.dat"),tag=FALSE))
+D = rbind(load.files(find.files("tmp", "sunspot_test.dat"),tag=FALSE))
 l = length(D$observed) - 1
 
 ### deltas
@@ -43,9 +58,52 @@ title("(t+4) - observed")
 ### individual zoom
 quartz(width=6,height=3.75)
 offset=1
-plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
-lines(D$predicted_tplus1[0:-offset], col="red")
-legend("topleft", c("observed","t+1"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus1[0:-offset], col="red")
+legend("topright", c("observed","t+1"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus2[0:-offset], col="red")
+legend("topright", c("observed","t+2"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus3[0:-offset], col="red")
+legend("topright", c("observed","t+3"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus4[0:-offset], col="red")
+legend("topright", c("observed","t+4"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus5[0:-offset], col="red")
+legend("topright", c("observed","t+5"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus6[0:-offset], col="red")
+legend("topright", c("observed","t+6"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus7[0:-offset], col="red")
+legend("topright", c("observed","t+7"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=1
+plot(D$observed[offset:l], type="l",col="blue", ylab="ssn")
+lines(D$tplus8[0:-offset], col="red")
+legend("topright", c("observed","t+8"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
 
 quartz(width=6,height=3.75)
 offset=2
@@ -64,6 +122,31 @@ offset=4
 plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
 lines(D$predicted_tplus4[0:-offset], col="red")
 legend("topleft", c("observed","t+4"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=5
+plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
+lines(D$predicted_tplus5[0:-offset], col="red")
+legend("topleft", c("observed","t+5"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=6
+plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
+lines(D$predicted_tplus6[0:-offset], col="red")
+legend("topleft", c("observed","t+6"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=7
+plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
+lines(D$predicted_tplus7[0:-offset], col="red")
+legend("topleft", c("observed","t+7"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
+quartz(width=6,height=3.75)
+offset=8
+plot(D$observed[offset:l], type="l",col="blue", xlim=c(3900,4100))
+lines(D$predicted_tplus8[0:-offset], col="red")
+legend("topleft", c("observed","t+8"), lty=c(1,1), lwd=c(2.5,2.5),col=c("blue","red"))
+
 
 
 quartz(width=6,height=3.75)

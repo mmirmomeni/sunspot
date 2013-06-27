@@ -17,6 +17,7 @@ using namespace ealib;
 
 // Common meta-data needed for sunspot prediction.
 LIBEA_MD_DECL(SUNSPOT_INPUT, "sunspot.input", std::string);
+LIBEA_MD_DECL(SUNSPOT_TEST_INPUT, "sunspot.test_input", std::string);
 LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
 
 /*! Fitness function for sunspot number prediction.
@@ -28,72 +29,62 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     typedef boost::numeric::ublas::vector<int> vector_type; //!< Type for a vector of sunspot numbers.
     
     mkv::markov_network::desc_type _desc; //!< Description of the markov network we'll be using.
-    matrix_type _input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
-    matrix_type _observed; //!< Observed (real) historical sunspot numbers.
-    vector_type _IntegerObserved;
+
+    // training data:
+    matrix_type _train_input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
+    vector_type _train_observed; //!< Observed (real) historical sunspot numbers.
+
+    // testing data:
+    matrix_type _test_input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
+    vector_type _test_observed; //!< Observed (real) historical sunspot numbers.
     
     //! Initialize this fitness function.
     template <typename RNG, typename EA>
     void initialize(RNG& rng, EA& ea) {
-        // this simply parses the geometry of the MKV network from the configuration
-        // file:
         mkv::parse_desc(get<MKV_DESC>(ea), _desc);
         
-        // input data can be found here (defined in config file or command line):
-        std::string filename=get<SUNSPOT_INPUT>(ea);
-        std::ifstream MyFile (filename.c_str());
-        
-        
-        std::string Line;
-        int MatrixSize=0;
-        
-        if (MyFile.is_open())
-        {
-            for (int i = 1; i <= 4; i++)
-            {
-                getline (MyFile,Line);
+        load_file(get<SUNSPOT_INPUT>(ea), _train_input, _train_observed);
+        load_file(get<SUNSPOT_TEST_INPUT>(ea), _test_input, _test_observed);
+    }
+    
+    void load_file(const std::string& filename, matrix_type& input, vector_type& observed) {
+        // read in the training data:
+        std::ifstream infile(filename.c_str());
+        std::string line;
+        int nrow=0;
+        if(infile.is_open()) {
+            for(int i=0; i<4; ++i) {
+                getline(infile,line);
             }
-            MyFile>>MatrixSize;
-        }
-        else
-        {
-            std::cerr<<"Sorry, this file cannot be read."<<std::endl;
-            return;
+            infile >> nrow;
+        } else {
+            throw file_io_exception("sunspot.h::initialize: could not open " + filename);
         }
         
-        const int NumberOfDigits = 9;
-        
-        // read in the historical data for sunspot numbers, and split it into:
-        
+        const int ncol = 9; // fixed number of bits per ssn
+
         // _input: a matrix where each row vector i is assumed to be the complete
         // **binary input vector** to the MKV network at time i.
-        _input.resize(MatrixSize,NumberOfDigits); // dummy initializer; replace with real size and data
+        input.resize(nrow,ncol);
         
         // _observed: a vector where element i corresponds to the observed (real) sunspot
         // number corresponding to row i in _inputs.
-        _observed.resize(MatrixSize,NumberOfDigits); // dummy initializer; replace with real size and data
-        _IntegerObserved.resize(MatrixSize);
-        int TempSSN = 0;
-        
-        for (int i = 0; i < MatrixSize; i++)
-        {
-            MyFile >>TempSSN;
-            _IntegerObserved(i) = TempSSN;
-            std::bitset<NumberOfDigits> TempBinarySSN = ~std::bitset<NumberOfDigits>(_IntegerObserved(i));
-            
-            for (int j = 0; j < NumberOfDigits; j++)
-            {
-                _input(i,j)=TempBinarySSN[NumberOfDigits - j - 1];
+        observed.resize(nrow);
+
+        for(int i=0; i<nrow; ++i) {
+            int t0=0;
+            infile >> t0 >> observed(i);
+
+            std::bitset<ncol> t0b = ~std::bitset<ncol>(t0);
+            for(int j=0; j<ncol; ++j) {
+                input(i,j) = t0b[ncol - j - 1];
             }
-            
-            MyFile >>TempSSN;
-            _IntegerObserved(i) = TempSSN;
-            TempBinarySSN = ~std::bitset<NumberOfDigits>(_IntegerObserved(i));
-            
-            for (int j = 0; j < NumberOfDigits; j++)
-            {
-                _observed(i,j)=TempBinarySSN[NumberOfDigits - j - 1];
-            }
+
+            // logic above is a bit strange.  consider instead:
+            // std::bitset<ncol> ssn(t0);
+            // for(int j=0; j<ncol; ++j) {
+            //     _input(i,j) = ssn[j];
+            // }
         }
     }
     
@@ -102,41 +93,48 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
      Here the output of the Markov network is interpreted for each of n time steps.
      */
     template <typename Individual, typename RNG, typename EA>
-	void test(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
+	double eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
         namespace bnu=boost::numeric::ublas;
         mkv::markov_network net = mkv::make_markov_network(_desc, ind.repr().begin(), ind.repr().end(), rng.seed(), ea);
         
         // outputs from the MKV network, initialized to the same size as the number
         // of observations by the fixed prediction horizon of 8 time steps.
         std::size_t ph=get<SUNSPOT_PREDICTION_HORIZON>(ea);
-        output.resize(_observed.size1(),ph);
+        output.resize(input.size1(), ph);
+        
+        bool first=true;
         
         // run each row of _inputs through the MKV network for a single update,
         // place the results in the output matrix:
-        for(std::size_t i=0; i<_input.size1(); ++i) {
-            row_type r(_input,i);
-            mkv::update(net, 1, r.begin());
+        for(std::size_t i=0; i<input.size1(); ++i) {
+            if(recurse) {
+                std::vector<int> v;
+                if(first) {
+                    row_type r(input,i);
+                    std::copy(r.begin(), r.end(), std::back_inserter(v));
+                    first = false;
+                } else {
+                    algorithm::range_pair2int(net.begin_output(),
+                                              net.begin_output()+2*input.size2(),
+                                              std::back_inserter(v));
+                }
+                mkv::update(net, 1, v.begin());
+            } else {
+                row_type r(input,i);
+                mkv::update(net, 1, r.begin());
+            }
             
             for(std::size_t j=0; j<ph; ++j) {
-                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*_input.size2(),
-                                                        net.begin_output()+(j+1)*2*_input.size2());
+                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*input.size2(),
+                                                        net.begin_output()+(j+1)*2*input.size2());
             }
         }
-    };
-    
-    //! Calculate fitness of an individual.
-    template <typename Individual, typename RNG, typename EA>
-    double operator()(Individual& ind, RNG& rng, EA& ea) {
-        namespace bnu=boost::numeric::ublas;
-        typedef bnu::vector<int> int_vector_type;
-        matrix_type output;
-        test(ind, output, rng, ea);
         
         // fitness == 1.0/(1.0 + sum_{i=1}^{prediction horizon} RMSE_i)
         double rmse=0.0;
         for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
             column_type c(output,i);
-            assert(c.size() == _IntegerObserved.size());
+            assert(c.size() == observed.size());
             
             // given:
             // input | observed | output (predictions)
@@ -155,44 +153,124 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             // note that as i increases, we're dropping elements off the front
             // of the observed, and the back of the output matrix.
             vector_type err =
-            bnu::vector_range<vector_type>(_IntegerObserved, bnu::range(i,_IntegerObserved.size()))
+            bnu::vector_range<vector_type>(observed, bnu::range(i,observed.size()))
             - bnu::vector_range<column_type>(c, bnu::range(0,c.size()-i));
             
             rmse += sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
         }
-        
+
+        return rmse;
+    };
+    
+    template <typename Individual, typename RNG, typename EA>
+    double train(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
+        return eval(ind, output, _train_input, _train_observed, rng, ea);
+    }
+
+    template <typename Individual, typename RNG, typename EA>
+    double test(Individual& ind, matrix_type& output, RNG& rng, EA& ea, bool recurse=false) {
+        return eval(ind, output, _test_input, _test_observed, rng, ea, recurse);
+    }
+
+    //! Calculate fitness of an individual.
+    template <typename Individual, typename RNG, typename EA>
+    double operator()(Individual& ind, RNG& rng, EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        typedef bnu::vector<int> int_vector_type;
+        matrix_type output;
+        double rmse = train(ind, output, rng, ea);
         return 100.0 / (1.0 + rmse);
     }
 };
 
-/*! Save the detailed graph of the dominant individual in graphviz format.
- */
 template <typename EA>
-struct test_sunspot : public ealib::analysis::unary_function<EA> {
-    static const char* name() { return "test_sunspot";}
+struct sunspot_detail : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_detail";}
     
     virtual void operator()(EA& ea) {
         using namespace ealib;
         using namespace ealib::analysis;
         typename EA::individual_type& ind = analysis::find_dominant(ea);
         
-        datafile df("test_sunspot.dat");
+        datafile df("sunspot_detail.dat");
         df.add_field("observed");
         
         for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
-            df.add_field("predicted_tplus" + boost::lexical_cast<std::string>(i+1));
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        ea.fitness_function().train(ind, output, ea.rng(), ea);
+        
+        for(std::size_t i=0; i<output.size1(); ++i) {
+            df.write(ea.fitness_function()._train_observed(i));
+            
+            for(std::size_t j=0; j<output.size2(); ++j) {
+                df.write(output(i,j));
+            }
+
+            df.endl();
+        }
+    }
+};
+
+template <typename EA>
+struct sunspot_test : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_test";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_test.dat");
+        df.add_field("observed");
+        
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
         }
         
         sunspot_fitness::matrix_type output;
         ea.fitness_function().test(ind, output, ea.rng(), ea);
         
         for(std::size_t i=0; i<output.size1(); ++i) {
-            df.write(ea.fitness_function()._IntegerObserved(i));
+            df.write(ea.fitness_function()._test_observed(i));
             
             for(std::size_t j=0; j<output.size2(); ++j) {
                 df.write(output(i,j));
             }
+            
+            df.endl();
+        }
+    }
+};
 
+template <typename EA>
+struct sunspot_recursive_test : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_recursive_test";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_recursive_test.dat");
+        df.add_field("observed");
+        
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        ea.fitness_function().test(ind, output, ea.rng(), ea, true);
+        
+        for(std::size_t i=0; i<output.size1(); ++i) {
+            df.write(ea.fitness_function()._test_observed(i));
+            
+            for(std::size_t j=0; j<output.size2(); ++j) {
+                df.write(output(i,j));
+            }
+            
             df.endl();
         }
     }

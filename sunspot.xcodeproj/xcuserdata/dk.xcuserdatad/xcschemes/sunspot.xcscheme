@@ -64,12 +64,20 @@
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz --analyze mkv_reduced_graph"
+            argument = "-l checkpoint-50000.xml.gz --analyze reduced_graph"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-l checkpoint-50000.xml.gz --analyze sunspot_test"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-l checkpoint-50000.xml.gz --analyze sunspot_recursive_test"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz --analyze test_sunspot"
-            isEnabled = "NO">
+            argument = "--override --sunspot.test_input=../data/MarkovNetworkBinarykDataTest.txt"
+            isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>
