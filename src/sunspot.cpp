@@ -83,6 +83,7 @@ public:
     virtual void gather_tools() {
         add_tool<sunspot_detail>(this);
         add_tool<sunspot_test>(this);
+        add_tool<sunspot_test_rmse>(this);
         add_tool<sunspot_recursive_test>(this);
         add_tool<mkv::reduced_graph>(this);
         add_tool<mkv::network_statistics>(this);

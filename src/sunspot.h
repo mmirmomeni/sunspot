@@ -27,6 +27,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     typedef boost::numeric::ublas::matrix_row<matrix_type> row_type; //!< Row type for the matrix.
     typedef boost::numeric::ublas::matrix_column<matrix_type> column_type; //!< Row type for the matrix.
     typedef boost::numeric::ublas::vector<int> vector_type; //!< Type for a vector of sunspot numbers.
+    typedef boost::numeric::ublas::vector<double> dvector_type; //!< Type for a vector of sunspot numbers.
     
     mkv::markov_network::desc_type _desc; //!< Description of the markov network we'll be using.
 
@@ -93,7 +94,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
      Here the output of the Markov network is interpreted for each of n time steps.
      */
     template <typename Individual, typename RNG, typename EA>
-	double eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
+	dvector_type eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
         namespace bnu=boost::numeric::ublas;
         mkv::markov_network net = mkv::make_markov_network(_desc, ind.repr().begin(), ind.repr().end(), rng.seed(), ea);
         
@@ -131,7 +132,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         }
         
         // fitness == 1.0/(1.0 + sum_{i=1}^{prediction horizon} RMSE_i)
-        double rmse=0.0;
+        dvector_type rmse(get<SUNSPOT_PREDICTION_HORIZON>(ea));
         for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
             column_type c(output,i);
             assert(c.size() == observed.size());
@@ -156,19 +157,19 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             bnu::vector_range<vector_type>(observed, bnu::range(i,observed.size()))
             - bnu::vector_range<column_type>(c, bnu::range(0,c.size()-i));
             
-            rmse += sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
+            rmse(i) = sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
         }
 
         return rmse;
     };
     
     template <typename Individual, typename RNG, typename EA>
-    double train(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
+    dvector_type train(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
         return eval(ind, output, _train_input, _train_observed, rng, ea);
     }
 
     template <typename Individual, typename RNG, typename EA>
-    double test(Individual& ind, matrix_type& output, RNG& rng, EA& ea, bool recurse=false) {
+    dvector_type test(Individual& ind, matrix_type& output, RNG& rng, EA& ea, bool recurse=false) {
         return eval(ind, output, _test_input, _test_observed, rng, ea, recurse);
     }
 
@@ -178,8 +179,9 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         namespace bnu=boost::numeric::ublas;
         typedef bnu::vector<int> int_vector_type;
         matrix_type output;
-        double rmse = train(ind, output, rng, ea);
-        return 100.0 / (1.0 + rmse);
+        vector_type rmse = train(ind, output, rng, ea);
+        
+        return 100.0 / (1.0 + std::accumulate(rmse.begin(), rmse.end(), 0.0));
     }
 };
 
@@ -242,6 +244,28 @@ struct sunspot_test : public ealib::analysis::unary_function<EA> {
             
             df.endl();
         }
+    }
+};
+
+template <typename EA>
+struct sunspot_test_rmse : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_test_rmse";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_test_rmse.dat");
+        df.add_field("total_rmse");
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        sunspot_fitness::dvector_type rmse = ea.fitness_function().test(ind, output, ea.rng(), ea);
+        
+        df.write(std::accumulate(rmse.begin(),rmse.end(),0.0)).write_all(rmse.begin(), rmse.end()).endl();
     }
 };
 
