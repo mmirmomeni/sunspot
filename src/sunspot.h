@@ -1,29 +1,10 @@
-/* sunspot.h
- *
- * This file is part of sunspot.
- *
- * Copyright 2012 David B. Knoester.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
 #ifndef _SUNSPOT_H_
 #define _SUNSPOT_H_
 
 #include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/lu.hpp>
-#include <boost/numeric/ublas/io.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
+#include <boost/numeric/ublas/vector.hpp>
+#include <boost/numeric/ublas/vector_proxy.hpp>
 #include <cmath>
 #include <ea/fitness_function.h>
 #include <ea/meta_data.h>
@@ -31,113 +12,57 @@
 #include <fstream>
 #include <string>
 #include <iostream>
-#include <limits>
-#include <cstdlib>
-#include <ctime>
 
-/*#include <Eigen/Core>
-#include <Eigen/LU>
-#include <Eigen/SVD>
-#include <Eigen/QR>
-#include <Eigen/Eigenvalues>
-*/
+using namespace ealib;
 
-using namespace boost::numeric::ublas;
-using namespace ea;
-using namespace std;
-// using namespace Eigen;
 // Common meta-data needed for sunspot prediction.
 LIBEA_MD_DECL(SUNSPOT_INPUT, "sunspot.input", std::string);
-
-int MatrixSize;
-const int MAX_ED = 7;
-const int MAX_NONLINEARITY = 4;
-int ParameterOrder [MAX_NONLINEARITY][MAX_ED] = {{1,2,3,4,5,6,7},{8,10,13,17,22,28,35},{36,39,45,55,70,91,119},{120,124,134,154,189,245,329}};
-
-
-/* Matrix inversion routine.
- Uses lu_factorize and lu_substitute in uBLAS to invert a matrix */
-template<class T>
-bool InvertMatrix(const matrix<T>& input, matrix<T>& inverse)
-{
-	typedef permutation_matrix<std::size_t> pmatrix;
-    
-	// create a working copy of the input
-	matrix<T> A(input);
-    
-	// create a permutation matrix for the LU-factorization
-	pmatrix pm(A.size1());
-    
-	// perform LU-factorization
-	int res = lu_factorize(A, pm);
-	if (res != 0)
-		return false;
-    
-	// create identity matrix of "inverse"
-	inverse.assign(identity_matrix<T> (A.size1()));
-    
-	// backsubstitute to get the inverse
-	lu_substitute(A, pm, inverse);
-    
-	return true;
-}
+LIBEA_MD_DECL(SUNSPOT_TEST_INPUT, "sunspot.test_input", std::string);
+LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
 
 /*! Fitness function for sunspot number prediction.
  */
-struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, absoluteS, stochasticS> {
+struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stochasticS> {
     typedef boost::numeric::ublas::matrix<int> matrix_type; //!< Type for matrix that will store raw sunspot numbers.
-    typedef boost::numeric::ublas::matrix<double> matrix_type_estimated;
     typedef boost::numeric::ublas::matrix_row<matrix_type> row_type; //!< Row type for the matrix.
+    typedef boost::numeric::ublas::matrix_column<matrix_type> column_type; //!< Row type for the matrix.
     typedef boost::numeric::ublas::vector<int> vector_type; //!< Type for a vector of sunspot numbers.
-    typedef boost::numeric::ublas::vector<double> vector_type_distance; //!< Type for a vector of sunspot numbers.
+    typedef boost::numeric::ublas::vector<double> dvector_type; //!< Type for a vector of sunspot numbers.
     
     mkv::markov_network::desc_type _desc; //!< Description of the markov network we'll be using.
-    matrix_type _input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
-    matrix_type           _observed; //!< Observed (real) historical sunspot numbers.
-    vector_type           _IntegerObserved;
-    vector_type           _IntegerInput;
-    vector_type_distance  _IntegerObservedED;
-    matrix_type_estimated _Training;
+
+    // training data:
+    matrix_type _train_input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
+    vector_type _train_observed; //!< Observed (real) historical sunspot numbers.
+
+    // testing data:
+    matrix_type _test_input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
+    vector_type _test_observed; //!< Observed (real) historical sunspot numbers.
     
+    //! Initialize this fitness function.
+    template <typename RNG, typename EA>
+    void initialize(RNG& rng, EA& ea) {
+        mkv::parse_desc(get<MKV_DESC>(ea), _desc);
+        
+        load_file(get<SUNSPOT_INPUT>(ea), _train_input, _train_observed);
+        load_file(get<SUNSPOT_TEST_INPUT>(ea), _test_input, _test_observed);
+    }
     
-    // Estimating the embedding dimension.
-	template <typename Embedding, typename Nonlinearity, typename EA>
-	unsigned embedding_dimension(Embedding& d , Nonlinearity& n , EA& ea) {
-        namespace bnu=boost::numeric::ublas;
-        // input data can be found here (defined in config file or command line):
-        std::string filename=get<SUNSPOT_INPUT>(ea);
-        std::ifstream MyFile (filename.c_str());
-        
-        
-        std::string Line;
-        MatrixSize=0;
-        
-        if (MyFile.is_open())
-        {
-            for (int i = 1; i <= 4; i++)
-            {
-                getline (MyFile,Line);
+    void load_file(const std::string& filename, matrix_type& input, vector_type& observed) {
+        // read in the training data:
+        std::ifstream infile(filename.c_str());
+        std::string line;
+        int nrow=0;
+        if(infile.is_open()) {
+            for(int i=0; i<4; ++i) {
+                getline(infile,line);
             }
-            MyFile>>MatrixSize;
-        }
-        else
-        {
-            std::cerr<<"Sorry, this file cannot be read."<<std::endl;
-            return 0;
+            infile >> nrow;
+        } else {
+            throw file_io_exception("sunspot.h::initialize: could not open " + filename);
         }
         
-        _IntegerInput.resize(MatrixSize - 1);
-        int TempSSN = 0;
-        MyFile >>TempSSN;
-        
-        for (int i = 0; i < MatrixSize - 1; i++)
-        {
-            _IntegerInput(i) = TempSSN;
-            MyFile >>TempSSN;
-            _IntegerObservedED(i) = TempSSN;
-            
-        }
-        
+<<<<<<< HEAD
         matrix_type_estimated _Parameters;
         matrix_type           _TrainingEstimationMatrix;
         matrix_type_estimated _IntegerEstimatedED;
@@ -516,726 +441,244 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             _TrainVector(i,1)  = _IntegerObservedED(i + MAX_ED);
     
         }
-        
-        matrix_type TempMatrix(MatrixSize - MAX_ED - 1 , 1 , 1);
-        int ColumnCounter;
-    
-        for (int j = 1; j <= MAX_NONLINEARITY; j++)
-        {
-            for (int i = 1; i <= MAX_ED; i++)
-            {
-                NumParameters = boost::math::factorial<int>(i + j) / (boost::math::factorial<int>(i) * boost::math::factorial<int>(j));
-                _Parameters.resize(NumParameters,1);
-                _TrainingEstimationMatrix.resize(MatrixSize - MAX_ED - 1 , NumParameters);
-                ColumnCounter = 0;
-                column(_TrainingEstimationMatrix, ColumnCounter) = column(TempMatrix, 1);
-                
-                for (int p = 0; p < j ; p++)
-                {
-                    for (int k = ParameterOrder[p][0];k <= ParameterOrder[p][i-1];k++)
-                    {
-                        ColumnCounter++;
-                        column(_TrainingEstimationMatrix, ColumnCounter) = column(_Training, k);
-                    }
-                }
-                                
-                matrix_type _TrainingTranspose = boost::numeric::ublas::trans(_TrainingEstimationMatrix);
-                matrix_type_estimated _TrainingSquare    = boost::numeric::ublas::prod(_TrainingTranspose, _TrainingEstimationMatrix);
-                matrix_type_estimated _TrainingInverse;
-                _TrainingInverse.resize(NumParameters , NumParameters);
-                
-                InvertMatrix(_TrainingSquare, _TrainingInverse);
-                matrix_type_estimated _LeftMatrix = boost::numeric::ublas::prod(_TrainingTranspose, _TrainingEstimationMatrix);
-                _Parameters = boost::numeric::ublas::prod(_LeftMatrix, _TrainVector);
-                
-                
-                /*****************
-                 Error Calculation
-                 *****************/
-                
-                _IntegerEstimatedED = boost::numeric::ublas::prod (_TrainingEstimationMatrix , _Parameters);
-                bnu::vector<double> err = column(_IntegerEstimatedED,1) - column(_TrainVector , 1);
-                _TrainError((j - 1) * MAX_ED + (i - 1)) = sqrt(1/static_cast<double>(err.size()) * bnu::inner_prod(err,err));
-            }
-        }
-    
-    unsigned f = 0;
-    double MinError = std::numeric_limits<double>::max();
-    
-    for (unsigned i = 0 ; i < _TrainError.size() ; i++)
-    {
-        if (_TrainError(i) < MinError)
-        {
-            MinError = _TrainError(i);
-            f = i % MAX_ED + 1;
-            d = i % MAX_ED + 1;
-            n = i / MAX_ED + 1;
-
-        }
-    }
-        
-    return f;
-    }
-    
-    
-    // QR decomposition.
-	template <typename MatrixQ, typename MatrixR, typename MatrixA>
-	bool QR_factorization(MatrixQ& Q , MatrixR& R , MatrixA& JacobianMatrix) {
-        
-        namespace bnu=boost::numeric::ublas;
-        int d = JacobianMatrix.size1();
-        
-        for (int i = 0; i < d - 1; i++)
-        {
-            for (int j = 0; j < d; j++)
-            {
-                R(i,j)=0;
-            }
-        }
-        
-        column(Q, 0) = column(JacobianMatrix , 0);
-        matrix_type_estimated _TempNorm = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(Q, 0)), column(Q, 0));
-        matrix_type_estimated _InvertTerm;
-        matrix_type_estimated _TempProject;
-        matrix_type_estimated _Projection;
-        _InvertTerm.resize(1,1);
-        InvertMatrix(_TempNorm, _InvertTerm);
-        column(Q, 0) = boost::numeric::ublas::prod(_InvertTerm, column(Q, 0));
-        
-        for (int i = 0; i < d - 1; i++)
-        {
-            for (int j = 0; j < i; j++)
-            {
-                R(i,j)=0;
-            }
-        }
-        
-        for (int i = 1; i < d - 1; i++)
-        {
-            column(Q, i) = column(JacobianMatrix , i);
-        
-            for (int j = 0; j < d; j++)
-            {
-                _TempProject  = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(JacobianMatrix, i)), column(Q, j));
-                _Projection   = boost::numeric::ublas::prod(_TempProject, _column(JacobianMatrix, i));
-                column(Q, i) -= _Projection;
-            }
-            
-            _TempNorm = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(Q, i)), column(Q, i));
-            InvertMatrix(_TempNorm, _InvertTerm);
-            column(Q, i) = boost::numeric::ublas::prod(_InvertTerm, column(Q, i));
-        }
-        
-        
-        for (int i = 0; i < d - 1; i++)
-        {
-            for (int j = i; j < d; j++)
-            {
-                _TempProject  = boost::numeric::ublas::prod(boost::numeric::ublas::trans(_column(JacobianMatrix, i)), column(Q, j));
-                _Projection   = boost::numeric::ublas::prod(_TempProject, _column(JacobianMatrix, i));
-                R(i, j) -= _Projection(0,0);
-            }
-        }
-        
-        return true;
-    }
-    
-    
-    
-    // Estimating the Lyapunov exponent first approach.
-	template <typename Embedding, typename Nonlinearity, typename Lyapunov, typename LargestLyapunov , typename EA>
-	double lyapunov_estimation(Embedding& d , Nonlinearity& n , Lyapunov& _LEs , LargestLyapunov& _LargestLyapunov , EA& ea) {
-        namespace bnu=boost::numeric::ublas;
-        // input data can be found here (defined in config file or command line):
-        
-        /**************
-         Initialization
-         **************/
-        
-        for (int k = 0 ; k < d ; k++)
-            _LEs(k) = 0;
-        
-        int NumParameters = boost::math::factorial<int>(d + n) / (boost::math::factorial<int>(d) * boost::math::factorial<int>(n));
-        
-        bool label;
-        matrix_type_estimated _Parameters;
-        matrix_type_estimated _Regressor;
-        matrix_type_estimated _RegressorTranspose;
-        matrix_type_estimated _Variance;
-        matrix_type_estimated _TempOne;
-        matrix_type_estimated _TempTwo;
-        matrix_type_estimated _TempThree;
-        matrix_type_estimated _TempFour;
-        matrix_type_estimated _Denominator;
-        matrix_type_estimated _Identity;
-        matrix_type_estimated _InverseDenominator;
-        matrix_type_estimated _EvolutionTerm;
-        matrix_type_estimated _Jacobian;
-        matrix_type_estimated _Q;
-        matrix_type_estimated _R;
-        
-        _Jacobian.resize(d,d);
-        _Q.resize(d,d);
-        _R.resize(d,d);
-        _Regressor.resize(NumParameters,1);
-        
-        
-        for (int i = 0; i < d - 1; i++)
-        {
-            for (int j = 0; j < d; j++)
-            {
-                _Jacobian(i,j)=0;
-            }
-            _Jacobian(i,i+1)=1;
-        }
-        
-        _Parameters.resize(NumParameters,1);
-        _Identity.resize(1,1);
-        _Identity(0,0)=1;
-        
-        matrix_type_estimated _ActualInput;
-        matrix_type_estimated _EstimatedInput;
-        matrix_type_estimated _Error;
-        
-        _ActualInput.resize(1,1);
-        _EstimatedInput.resize(1,1);
-        _Error.resize(1,1);
-        
-        
-        _Regressor.resize(NumParameters,1);
-        _Variance.resize(NumParameters,NumParameters);
-        
-        srand((unsigned)time(0));
-        
-        for(int i=0; i<NumParameters; i++)
-            _Parameters(i,0) = (rand()%10)+1;
-            
-        for(int i=0; i<NumParameters; i++){
-            
-            for(int j=0; j<NumParameters; j++)
-                _Variance(i,j)=0;
-            _Variance(i,i)=1000000;
-        }
-        
-        
-        /**********
-         Estimation
-         **********/
-        
-        for (int i = 0; i < MatrixSize - MAX_ED - 1; i++)
-        {
-            
-            /********************
-             Parameter Estimation
-             ********************/
-            
-            int ColumnCounter = 0;
-            _Regressor(0,0)   = 1;
-            
-            for (int p = 0; p < n ; p++)
-            {
-                for (int k = ParameterOrder[p][0];k <= ParameterOrder[p][d-1];k++)
-                {
-                    ColumnCounter++;
-                    _Regressor(ColumnCounter , 0) = _Training(i , k);
-                }
-            }
-            
-            
-            
-            _ActualInput(0,0) = _IntegerObservedED(i + MAX_ED);
-            
-            _RegressorTranspose = boost::numeric::ublas::trans(_Regressor);
-            _TempOne            = boost::numeric::ublas::prod(_RegressorTranspose, _Variance);
-            _TempTwo            = boost::numeric::ublas::prod(_Variance , _Regressor);
-            _TempThree          = boost::numeric::ublas::prod(_TempTwo, _TempOne);
-            _TempFour           = boost::numeric::ublas::prod(_RegressorTranspose, _TempTwo);
-            _Denominator        = _Identity + _TempFour;
-            InvertMatrix(_Denominator, _InverseDenominator);
-            _EvolutionTerm = boost::numeric::ublas::prod(_InverseDenominator, _TempThree);
-            _Variance -= _EvolutionTerm;
-            matrix_type_estimated _TransParameters = boost::numeric::ublas::trans(_Parameters);
-            _EstimatedInput = boost::numeric::ublas::prod(_TransParameters , _Regressor);
-            
-            _Error = _ActualInput - _EstimatedInput;
-            
-            matrix_type_estimated _EvolutionParameterOne = boost::numeric::ublas::prod(_Variance , _Regressor);
-            matrix_type_estimated _EvolutionParameter    = boost::numeric::ublas::prod(_Error , _EvolutionParameterOne);
-            _Parameters += _EvolutionParameter;
-            
-            /*******************
-             Jacobian Estimation
-             *******************/
-            
-            switch (n)
-            {
-                case 1:
-                    
-                    switch (d)
-                    {
-                        case 1:
-                            _Jacobian(0,0) = _Parameters(1,0);
-                            break;
-                        case 2:
-                            _Jacobian(1,0) = _Parameters(1,0);
-                            _Jacobian(1,1) = _Parameters(2,0);
-                            break;
-                        case 3:
-                            _Jacobian(2,0) = _Parameters(1,0);
-                            _Jacobian(2,1) = _Parameters(2,0);
-                            _Jacobian(2,2) = _Parameters(3,0);
-                            break;
-                        case 4:
-                            _Jacobian(3,0) = _Parameters(1,0);
-                            _Jacobian(3,1) = _Parameters(2,0);
-                            _Jacobian(3,2) = _Parameters(3,0);
-                            _Jacobian(3,3) = _Parameters(4,0);
-                            break;
-                        case 5:
-                            _Jacobian(4,0) = _Parameters(1,0);
-                            _Jacobian(4,1) = _Parameters(2,0);
-                            _Jacobian(4,2) = _Parameters(3,0);
-                            _Jacobian(4,3) = _Parameters(4,0);
-                            _Jacobian(4,4) = _Parameters(5,0);
-                            break;
-                        case 6:
-                            _Jacobian(5,0) = _Parameters(1,0);
-                            _Jacobian(5,1) = _Parameters(2,0);
-                            _Jacobian(5,2) = _Parameters(3,0);
-                            _Jacobian(5,3) = _Parameters(4,0);
-                            _Jacobian(5,4) = _Parameters(5,0);
-                            _Jacobian(5,5) = _Parameters(6,0);
-                            break;
-                        case 7:
-                            _Jacobian(6,0) = _Parameters(1,0);
-                            _Jacobian(6,1) = _Parameters(2,0);
-                            _Jacobian(6,2) = _Parameters(3,0);
-                            _Jacobian(6,3) = _Parameters(4,0);
-                            _Jacobian(6,4) = _Parameters(5,0);
-                            _Jacobian(6,5) = _Parameters(6,0);
-                            _Jacobian(6,6) = _Parameters(7,0);
-                            break;
-                    }
-                    break;
-                    
-                case 2:
-                    switch (d)
-                    {
-                    case 1:
-                        _Jacobian(0,0) = _Parameters(1,0) + 2 * _Parameters(2,0) * _Training(i,1);
-                        break;
-                    case 2:
-                        _Jacobian(1,0) = _Parameters(1,0) + 2 * _Parameters(3,0) * _Training(i,1) + _Parameters(4,0) * _Training(i,2);
-                        _Jacobian(1,1) = _Parameters(2,0) + _Parameters(4,0) * _Training(i,1) + 2 * _Parameters(5,0) * _Training(i,2);
-                        break;
-                    case 3:
-                        _Jacobian(2,0) = _Parameters(1,0)+2*_Parameters(4,0)*_Training(i,1)+_Parameters(5,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,3);
-                        _Jacobian(2,1) = _Parameters(2,0)+2*_Parameters(6,0)*_Training(i,2)+_Parameters(5,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,3);
-                        _Jacobian(2,2) = _Parameters(3,0)+2*_Parameters(9,0)*_Training(i,3)+_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2);
-                        break;
-                    case 4:
-                        _Jacobian(3,0) = _Parameters(1,0)+2*_Parameters(5,0)*_Training(i,1)+_Parameters(6,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,3)+_Parameters(11,0)*_Training(i,4);
-                        _Jacobian(3,1) = _Parameters(2,0)+2*_Parameters(7,0)*_Training(i,2)+_Parameters(6,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4);
-                        _Jacobian(3,2) = _Parameters(3,0)+2*_Parameters(10,0)*_Training(i,3)+_Parameters(8,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,2)+_Parameters(13,0)*_Training(i,4);
-                        _Jacobian(3,3) = _Parameters(4,0)+2*_Parameters(14,0)*_Training(i,4)+_Parameters(11,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,2)+_Parameters(13,0)*_Training(i,4);
-                        break;
-                    case 5:
-                        _Jacobian(4,0) = _Parameters(1,0)+2*_Parameters(6,0)*_Training(i,1)+_Parameters(7,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4)+_Parameters(16,0)*_Training(i,5);
-                        _Jacobian(4,1) = _Parameters(2,0)+2*_Parameters(8,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5);
-                        _Jacobian(4,2) = _Parameters(3,0)+2*_Parameters(11,0)*_Training(i,3)+_Parameters(9,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5);
-                        _Jacobian(4,3) = _Parameters(4,0)+2*_Parameters(15,0)*_Training(i,4)+_Parameters(12,0)*_Training(i,1)+_Parameters(13,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5);
-                        _Jacobian(4,4) = _Parameters(5,0)+2*_Parameters(20,0)*_Training(i,5)+_Parameters(16,0)*_Training(i,1)+_Parameters(17,0)*_Training(i,2)+_Parameters(18,0)*_Training(i,3)+_Parameters(19,0)*_Training(i,4);
-                        break;
-                    case 6:
-                        _Jacobian(5,0) = _Parameters(1,0)+2*_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5)+_Parameters(22,0)*_Training(i,6);
-                        _Jacobian(5,1) = _Parameters(2,0)+2*_Parameters(9,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6);
-                        _Jacobian(5,2) = _Parameters(3,0)+2*_Parameters(12,0)*_Training(i,3)+_Parameters(10,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,2)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6);
-                        _Jacobian(5,3) = _Parameters(4,0)+2*_Parameters(16,0)*_Training(i,4)+_Parameters(13,0)*_Training(i,1)+_Parameters(14,0)*_Training(i,2)+_Parameters(15,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6);
-                        _Jacobian(5,4) = _Parameters(5,0)+2*_Parameters(21,0)*_Training(i,5)+_Parameters(17,0)*_Training(i,1)+_Parameters(18,0)*_Training(i,2)+_Parameters(19,0)*_Training(i,3)+_Parameters(20,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,6);
-                        _Jacobian(5,5) = _Parameters(6,0)+2*_Parameters(27,0)*_Training(i,6)+_Parameters(22,0)*_Training(i,1)+_Parameters(23,0)*_Training(i,2)+_Parameters(24,0)*_Training(i,3)+_Parameters(25,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,5);
-                        break;
-                    case 7:
-                        _Jacobian(5,0) = _Parameters(1,0)+2*_Parameters(8,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,2)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6)+_Parameters(29,0)*_Training(i,7);
-                        _Jacobian(5,1) = _Parameters(2,0)+2*_Parameters(10,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,3)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6)+_Parameters(30,0)*_Training(i,7);
-                        _Jacobian(5,2) = _Parameters(3,0)+2*_Parameters(13,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,2)+_Parameters(16,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6)+_Parameters(31,0)*_Training(i,7);
-                        _Jacobian(5,3) = _Parameters(4,0)+2*_Parameters(17,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,1)+_Parameters(15,0)*_Training(i,2)+_Parameters(16,0)*_Training(i,4)+_Parameters(21,0)*_Training(i,5)+_Parameters(26,0)*_Training(i,6)+_Parameters(32,0)*_Training(i,7);
-                        _Jacobian(5,4) = _Parameters(5,0)+2*_Parameters(22,0)*_Training(i,5)+_Parameters(18,0)*_Training(i,1)+_Parameters(19,0)*_Training(i,2)+_Parameters(20,0)*_Training(i,3)+_Parameters(21,0)*_Training(i,4)+_Parameters(27,0)*_Training(i,6)+_Parameters(33,0)*_Training(i,7);
-                        _Jacobian(5,5) = _Parameters(6,0)+2*_Parameters(28,0)*_Training(i,6)+_Parameters(23,0)*_Training(i,1)+_Parameters(24,0)*_Training(i,2)+_Parameters(25,0)*_Training(i,3)+_Parameters(26,0)*_Training(i,4)+_Parameters(27,0)*_Training(i,5)+_Parameters(34,0)*_Training(i,7);
-                        _Jacobian(6,6) = _Parameters(7,0)+2*_Parameters(35,0)*_Training(i,7)+_Parameters(29,0)*_Training(i,1)+_Parameters(30,0)*_Training(i,2)+_Parameters(31,0)*_Training(i,3)+_Parameters(32,0)*_Training(i,4)+_Parameters(33,0)*_Training(i,5)+_Parameters(34,0)*_Training(i,6);
-                        break;
-                    }
-                    break;
-                    
-                case 3:
-                    switch (d)
-                    {
-                    case 1:
-                            _Jacobian(0,0) = _Parameters(1,0)+2*_Parameters(2,0)*_Training(i,1)+3*_Parameters(3,0)*pow(_Training(i,1),2);
-                            break;
-                    case 2:
-                            _Jacobian(1,0) = _Parameters(1,0)+2*_Parameters(3,0)*_Training(i,1)+_Parameters(4,0)*_Training(i,2)+3*_Parameters(6,0)*pow(_Training(i,1),2)+2*_Parameters(7,0)*_Training(i,1)*_Training(i,2)+_Parameters(8,0)*pow(_Training(i,2),2);
-                            
-                            _Jacobian(1,1) = _Parameters(2,0)+2*_Parameters(5,0)*_Training(i,5)+_Parameters(4,0)*_Training(i,1)+3*_Parameters(9,0)*pow(_Training(i,2),2)+2*_Parameters(8,0)*_Training(i,1)*_Training(i,2)+_Parameters(7,0)*pow(_Training(i,1),2);
-                            break;
-                    case 3:
-                        
-                        _Jacobian(2,0) = _Parameters(1,0)+2*_Parameters(4,0)*_Training(i,1)+_Parameters(5,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,3)+3*_Parameters(10,0)*pow(_Training(i,1),2)+2*_Parameters(11,0)*_Training(i,1)*_Training(i,2)+_Parameters(12,0)*pow(_Training(i,2),2)+2*_Parameters(14,0)*_Training(i,1)*_Training(i,3)+_Parameters(16,0)*_Training(i,2)*_Training(i,3)+_Parameters(17,0)*pow(_Training(i,3),2);
-                        
-                        _Jacobian(2,1) = _Parameters(2,0)+2*_Parameters(6,0)*_Training(i,2)+_Parameters(5,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,3)+3*_Parameters(13,0)*pow(_Training(i,2),2)+2*_Parameters(12,0)*_Training(i,1)*_Training(i,2)+_Parameters(11,0)*pow(_Training(i,1),2)+2*_Parameters(15,0)*_Training(i,2)*_Training(i,3)+_Parameters(16,0)*_Training(i,1)*_Training(i,3)+_Parameters(18,0)*pow(_Training(i,3),2);
-                        
-                        _Jacobian(2,2) = _Parameters(3,0)+2*_Parameters(9,0)*_Training(i,3)+_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2)+3*_Parameters(19,0)*pow(_Training(i,3),2)+2*_Parameters(17,0)*_Training(i,1)*_Training(i,3)+_Parameters(14,0)*pow(_Training(i,1),2)+2*_Parameters(18,0)*_Training(i,2)*_Training(i,3)+_Parameters(16,0)*_Training(i,1)*_Training(i,2)+_Parameters(15,0)*pow(_Training(i,2),2);
-                        break;
-                    case 4:
-                        _Jacobian(3,0) = _Parameters(1,0)+2*_Parameters(5,0)*_Training(i,1)+_Parameters(6,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,3)+_Parameters(11,0)*_Training(i,4)+3*_Parameters(15,0)*pow(_Training(i,1),2)+2*_Parameters(16,0)*_Training(i,1)*_Training(i,2)+_Parameters(17,0)*pow(_Training(i,2),2)+2*_Parameters(19,0)*_Training(i,1)*_Training(i,3)+_Parameters(21,0)*_Training(i,2)*_Training(i,3)+_Parameters(22,0)*pow(_Training(i,3),2)+2*_Parameters(25,0)*_Training(i,1)*_Training(i,4)+_Parameters(28,0)*_Training(i,2)*_Training(i,4)+_Parameters(29,0)*_Training(i,3)*_Training(i,4)+_Parameters(31,0)*pow(_Training(i,4),2);
-                        
-                        _Jacobian(3,1) = _Parameters(2,0)+2*_Parameters(7,0)*_Training(i,2)+_Parameters(6,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4)+3*_Parameters(18,0)*pow(_Training(i,2),2)+2*_Parameters(17,0)*_Training(i,1)*_Training(i,2)+_Parameters(16,0)*pow(_Training(i,1),2)+2*_Parameters(20,0)*_Training(i,2)*_Training(i,3)+_Parameters(21,0)*_Training(i,1)*_Training(i,3)+_Parameters(23,0)*pow(_Training(i,3),2)+2*_Parameters(26,0)*_Training(i,2)*_Training(i,4)+_Parameters(28,0)*_Training(i,1)*_Training(i,4)+_Parameters(30,0)*_Training(i,3)*_Training(i,4)+_Parameters(32,0)*pow(_Training(i,4),2);
-                        
-                        _Jacobian(3,2) = _Parameters(3,0)+2*_Parameters(10,0)*_Training(i,3)+_Parameters(9,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,1)+_Parameters(13,0)*_Training(i,4)+3*_Parameters(24,0)*pow(_Training(i,3),2)+2*_Parameters(22,0)*_Training(i,1)*_Training(i,3)+_Parameters(19,0)*pow(_Training(i,1),2)+2*_Parameters(23,0)*_Training(i,2)*_Training(i,3)+_Parameters(21,0)*_Training(i,1)*_Training(i,2)+_Parameters(20,0)*pow(_Training(i,2),2)+2*_Parameters(27,0)*_Training(i,3)*_Training(i,4)+_Parameters(29,0)*_Training(i,1)*_Training(i,4)+_Parameters(30,0)*_Training(i,2)*_Training(i,4)+_Parameters(33,0)*pow(_Training(i,4),2);
-                        
-                        _Jacobian(3,3) = _Parameters(4,0)+_Parameters(11,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,2)+_Parameters(13,0)*_Training(i,3)+2*_Parameters(14,0)*_Training(i,4)+_Parameters(25,0)*pow(_Training(i,1),2)+_Parameters(26,0)*pow(_Training(i,2),2)+_Parameters(27,0)*pow(_Training(i,3),2)+_Parameters(28,0)*_Training(i,1)*_Training(i,2)+_Parameters(29,0)*_Training(i,1)*_Training(i,3)+_Parameters(30,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(31,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(32,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(33,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(34,0)*pow(_Training(i,4),2);
-                        break;
-                    case 5:
-                        _Jacobian(4,0) = _Parameters(1,0)+2*_Parameters(6,0)*_Training(i,1)+_Parameters(7,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4)+_Parameters(16,0)*_Training(i,5)+3*_Parameters(21,0)*pow(_Training(i,1),2)+2*_Parameters(22,0)*_Training(i,1)*_Training(i,2)+_Parameters(23,0)*pow(_Training(i,2),2)+2*_Parameters(25,0)*_Training(i,1)*_Training(i,3)+_Parameters(27,0)*_Training(i,2)*_Training(i,3)+_Parameters(28,0)*pow(_Training(i,3),2)+2*_Parameters(31,0)*_Training(i,1)*_Training(i,4)+_Parameters(34,0)*_Training(i,2)*_Training(i,4)+_Parameters(35,0)*_Training(i,3)*_Training(i,4)+_Parameters(37,0)*pow(_Training(i,4),2)+2*_Parameters(41,0)*_Training(i,1)*_Training(i,5)+_Parameters(45,0)*_Training(i,2)*_Training(i,5)+_Parameters(46,0)*_Training(i,3)*_Training(i,5)+_Parameters(47,0)*_Training(i,4)*_Training(i,5)+_Parameters(51,0)*pow(_Training(i,5),2);
-                        
-                        _Jacobian(4,1) = _Parameters(2,0)+2*_Parameters(8,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5)+3*_Parameters(24,0)*pow(_Training(i,2),2)+2*_Parameters(23,0)*_Training(i,1)*_Training(i,2)+_Parameters(22,0)*pow(_Training(i,1),2)+2*_Parameters(26,0)*_Training(i,2)*_Training(i,3)+_Parameters(27,0)*_Training(i,1)*_Training(i,3)+_Parameters(29,0)*pow(_Training(i,3),2)+2*_Parameters(32,0)*_Training(i,2)*_Training(i,4)+_Parameters(34,0)*_Training(i,1)*_Training(i,4)+_Parameters(36,0)*_Training(i,3)*_Training(i,4)+_Parameters(38,0)*pow(_Training(i,4),2)+2*_Parameters(42,0)*_Training(i,2)*_Training(i,5)+_Parameters(45,0)*_Training(i,1)*_Training(i,5)+_Parameters(48,0)*_Training(i,3)*_Training(i,5)+_Parameters(49,0)*_Training(i,4)*_Training(i,5)+_Parameters(52,0)*pow(_Training(i,5),2);
-                        
-                        _Jacobian(4,2) = _Parameters(3,0)+2*_Parameters(11,0)*_Training(i,3)+_Parameters(9,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+3*_Parameters(30,0)*pow(_Training(i,3),2)+2*_Parameters(28,0)*_Training(i,1)*_Training(i,3)+_Parameters(25,0)*pow(_Training(i,1),2)+2*_Parameters(29,0)*_Training(i,2)*_Training(i,3)+_Parameters(27,0)*_Training(i,1)*_Training(i,2)+_Parameters(26,0)*pow(_Training(i,2),2)+2*_Parameters(33,0)*_Training(i,3)*_Training(i,4)+_Parameters(35,0)*_Training(i,1)*_Training(i,4)+_Parameters(36,0)*_Training(i,2)*_Training(i,4)+_Parameters(39,0)*pow(_Training(i,4),2)+2*_Parameters(43,0)*_Training(i,3)*_Training(i,5)+_Parameters(46,0)*_Training(i,1)*_Training(i,5)+_Parameters(48,0)*_Training(i,2)*_Training(i,5)+_Parameters(50,0)*_Training(i,4)*_Training(i,5)+_Parameters(53,0)*pow(_Training(i,5),2);
-                        
-                        _Jacobian(4,3) = _Parameters(4,0)+2*_Parameters(15,0)*_Training(i,4)+_Parameters(12,0)*_Training(i,1)+_Parameters(13,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,3)+_Parameters(19,0)*_Training(i,5)+3*_Parameters(40,0)*pow(_Training(i,4),2)+2*_Parameters(37,0)*_Training(i,1)*_Training(i,4)+_Parameters(31,0)*pow(_Training(i,1),2)+2*_Parameters(38,0)*_Training(i,2)*_Training(i,4)+_Parameters(34,0)*_Training(i,1)*_Training(i,2)+_Parameters(32,0)*pow(_Training(i,2),2)+2*_Parameters(39,0)*_Training(i,3)*_Training(i,4)+_Parameters(35,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*_Training(i,2)*_Training(i,3)+_Parameters(33,0)*pow(_Training(i,3),2)+2*_Parameters(44,0)*_Training(i,4)*_Training(i,5)+_Parameters(47,0)*_Training(i,1)*_Training(i,5)+_Parameters(49,0)*_Training(i,2)*_Training(i,5)+_Parameters(50,0)*_Training(i,3)*_Training(i,5)+_Parameters(54,0)*pow(_Training(i,5),2);
-                            
-                        _Jacobian(4,4) = _Parameters(5,0)+2*_Parameters(20,0)*_Training(i,5)+_Parameters(16,0)*_Training(i,1)+_Parameters(17,0)*_Training(i,2)+_Parameters(18,0)*_Training(i,3)+_Parameters(19,0)*_Training(i,4)+3*_Parameters(55,0)*pow(_Training(i,5),2)+2*_Parameters(51,0)*_Training(i,1)*_Training(i,5)+_Parameters(41,0)*pow(_Training(i,1),2)+2*_Parameters(52,0)*_Training(i,2)*_Training(i,5)+_Parameters(45,0)*_Training(i,1)*_Training(i,2)+_Parameters(42,0)*pow(_Training(i,2),2)+2*_Parameters(53,0)*_Training(i,3)*_Training(i,5)+_Parameters(46,0)*_Training(i,1)*_Training(i,3)+_Parameters(48,0)*_Training(i,2)*_Training(i,3)+_Parameters(43,0)*pow(_Training(i,3),2)+2*_Parameters(54,0)*_Training(i,4)*_Training(i,5)+_Parameters(47,0)*_Training(i,1)*_Training(i,4)+_Parameters(49,0)*_Training(i,2)*_Training(i,4)+_Parameters(50,0)*_Training(i,3)*_Training(i,4)+_Parameters(44,0)*pow(_Training(i,4),2);
-                            
-                        break;
-                    case 6:
-                        _Jacobian(5,0) = _Parameters(1,0)+2*_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5)+_Parameters(22,0)*_Training(i,6)+3*_Parameters(28,0)*pow(_Training(i,1),2)+2*_Parameters(29,0)*_Training(i,1)*_Training(i,2)+_Parameters(30,0)*pow(_Training(i,2),2)+2*_Parameters(32,0)*_Training(i,1)*_Training(i,2)+_Parameters(34,0)*_Training(i,2)*_Training(i,3)+_Parameters(35,0)*pow(_Training(i,3),2)+2*_Parameters(38,0)*_Training(i,1)*_Training(i,4)+_Parameters(41,0)*_Training(i,2)*_Training(i,4)+_Parameters(42,0)*_Training(i,3)*_Training(i,4)+_Parameters(44,0)*pow(_Training(i,4),2)+2*_Parameters(48,0)*_Training(i,1)*_Training(i,5)+_Parameters(52,0)*_Training(i,2)*_Training(i,5)+_Parameters(53,0)*_Training(i,3)*_Training(i,5)+_Parameters(54,0)*_Training(i,4)*_Training(i,5)+_Parameters(58,0)*pow(_Training(i,5),2)+2*_Parameters(63,0)*_Training(i,1)*_Training(i,6)+_Parameters(68,0)*_Training(i,2)*_Training(i,6)+_Parameters(69,0)*_Training(i,3)*_Training(i,6)+_Parameters(70,0)*_Training(i,4)*_Training(i,6)+_Parameters(71,0)*_Training(i,5)*_Training(i,6)+_Parameters(78,0)*pow(_Training(i,6),2);
-                            
-                        _Jacobian(5,1) = _Parameters(2,0)+2*_Parameters(9,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6)+3*_Parameters(31,0)*pow(_Training(i,2),2)+2*_Parameters(30,0)*_Training(i,1)*_Training(i,2)+_Parameters(29,0)*pow(_Training(i,1),2)+2*_Parameters(33,0)*_Training(i,2)*_Training(i,3)+_Parameters(34,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*pow(_Training(i,3),2)+2*_Parameters(39,0)*_Training(i,2)*_Training(i,4)+_Parameters(41,0)*_Training(i,1)*_Training(i,4)+_Parameters(43,0)*_Training(i,3)*_Training(i,4)+_Parameters(45,0)*pow(_Training(i,4),2)+2*_Parameters(49,0)*_Training(i,2)*_Training(i,5)+_Parameters(52,0)*_Training(i,1)*_Training(i,5)+_Parameters(55,0)*_Training(i,3)*_Training(i,5)+_Parameters(56,0)*_Training(i,4)*_Training(i,5)+_Parameters(59,0)*pow(_Training(i,5),2)+2*_Parameters(64,0)*_Training(i,2)*_Training(i,6)+_Parameters(68,0)*_Training(i,1)*_Training(i,6)+_Parameters(72,0)*_Training(i,3)*_Training(i,6)+_Parameters(73,0)*_Training(i,4)*_Training(i,6)+_Parameters(74,0)*_Training(i,5)*_Training(i,6)+_Parameters(79,0)*pow(_Training(i,6),2);
-                            
-                        _Jacobian(5,2) = _Parameters(3,0)+_Parameters(10,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,2)+2*_Parameters(12,0)*_Training(i,3)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6)+_Parameters(32,0)*pow(_Training(i,1),2)+_Parameters(33,0)*pow(_Training(i,2),2)+_Parameters(34,0)*_Training(i,1)*_Training(i,2)+2*_Parameters(35,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*_Training(i,2)*_Training(i,3)+3*_Parameters(37,0)*pow(_Training(i,3),2)+2*_Parameters(40,0)*_Training(i,3)*_Training(i,4)+_Parameters(42,0)*_Training(i,1)*_Training(i,4)+_Parameters(43,0)*_Training(i,2)*_Training(i,4)+_Parameters(46,0)*pow(_Training(i,4),2)+2*_Parameters(50,0)*_Training(i,3)*_Training(i,5)+_Parameters(53,0)*_Training(i,1)*_Training(i,5)+_Parameters(55,0)*_Training(i,2)*_Training(i,5)+_Parameters(57,0)*_Training(i,4)*_Training(i,5)+_Parameters(60,0)*pow(_Training(i,5),2)+2*_Parameters(65,0)*_Training(i,3)*_Training(i,6)+_Parameters(69,0)*_Training(i,1)*_Training(i,6)+_Parameters(72,0)*_Training(i,2)*_Training(i,6)+_Parameters(75,0)*_Training(i,4)*_Training(i,6)+_Parameters(76,0)*_Training(i,5)*_Training(i,6)+_Parameters(80,0)*pow(_Training(i,6),2);
-                            
-                        _Jacobian(5,3) = _Parameters(4,0)+_Parameters(13,0)*_Training(i,1)+_Parameters(14,0)*_Training(i,2)+_Parameters(15,0)*_Training(i,3)+2*_Parameters(16,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6)+_Parameters(38,0)*pow(_Training(i,1),2)+_Parameters(39,0)*pow(_Training(i,2),2)+_Parameters(40,0)*pow(_Training(i,3),2)+_Parameters(41,0)*_Training(i,1)*_Training(i,2)+_Parameters(42,0)*_Training(i,1)*_Training(i,3)+_Parameters(43,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(44,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(45,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(46,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(47,0)*pow(_Training(i,4),2)+2*_Parameters(51,0)*_Training(i,4)*_Training(i,5)+_Parameters(54,0)*_Training(i,1)*_Training(i,5)+_Parameters(56,0)*_Training(i,2)*_Training(i,5)+_Parameters(57,0)*_Training(i,3)*_Training(i,5)+_Parameters(61,0)*pow(_Training(i,5),2)+2*_Parameters(66,0)*_Training(i,4)*_Training(i,6)+_Parameters(70,0)*_Training(i,1)*_Training(i,6)+_Parameters(73,0)*_Training(i,2)*_Training(i,6)+_Parameters(75,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,5)*_Training(i,6)+_Parameters(81,0)*pow(_Training(i,6),2);
-                            
-                        _Jacobian(5,4) = _Parameters(5,0)+_Parameters(17,0)*_Training(i,1)+_Parameters(18,0)*_Training(i,2)+_Parameters(19,0)*_Training(i,3)+2*_Parameters(21,0)*_Training(i,5)+_Parameters(20,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,6)+_Parameters(48,0)*pow(_Training(i,1),2)+_Parameters(49,0)*pow(_Training(i,2),2)+_Parameters(50,0)*pow(_Training(i,3),2)+_Parameters(51,0)*pow(_Training(i,4),2)+_Parameters(52,0)*_Training(i,1)*_Training(i,2)+_Parameters(53,0)*_Training(i,1)*_Training(i,3)+_Parameters(54,0)*_Training(i,1)*_Training(i,4)+_Parameters(55,0)*_Training(i,2)*_Training(i,3)+_Parameters(56,0)*_Training(i,2)*_Training(i,4)+_Parameters(57,0)*_Training(i,3)*_Training(i,4)+2*_Parameters(58,0)*_Training(i,1)*_Training(i,5)+2*_Parameters(59,0)*_Training(i,2)*_Training(i,5)+2*_Parameters(60,0)*_Training(i,3)*_Training(i,5)+2*_Parameters(61,0)*_Training(i,4)*_Training(i,5)+3*_Parameters(62,0)*pow(_Training(i,5),2)+2*_Parameters(67,0)*_Training(i,5)*_Training(i,6)+_Parameters(71,0)*_Training(i,1)*_Training(i,6)+_Parameters(74,0)*_Training(i,2)*_Training(i,6)+_Parameters(76,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,4)*_Training(i,6)+_Parameters(82,0)*pow(_Training(i,6),2);
-                            
-                        _Jacobian(5,5) = _Parameters(6,0)+_Parameters(22,0)*_Training(i,1)+_Parameters(23,0)*_Training(i,2)+_Parameters(24,0)*_Training(i,3)+2*_Parameters(27,0)*_Training(i,6)+_Parameters(25,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,5)+_Parameters(63,0)*pow(_Training(i,1),2)+_Parameters(64,0)*pow(_Training(i,2),2)+_Parameters(65,0)*pow(_Training(i,3),2)+_Parameters(66,0)*pow(_Training(i,4),2)+_Parameters(68,0)*_Training(i,1)*_Training(i,2)+_Parameters(69,0)*_Training(i,1)*_Training(i,3)+_Parameters(70,0)*_Training(i,1)*_Training(i,4)+_Parameters(71,0)*_Training(i,1)*_Training(i,5)+_Parameters(72,0)*_Training(i,2)*_Training(i,3)+_Parameters(73,0)*_Training(i,2)*_Training(i,4)+_Parameters(74,0)*_Training(i,2)*_Training(i,5)+_Parameters(75,0)*_Training(i,3)*_Training(i,4)+_Parameters(76,0)*_Training(i,3)*_Training(i,5)+_Parameters(77,0)*_Training(i,4)*_Training(i,5)+2*_Parameters(78,0)*_Training(i,1)*_Training(i,6)+2*_Parameters(79,0)*_Training(i,2)*_Training(i,6)+2*_Parameters(80,0)*_Training(i,3)*_Training(i,6)+2*_Parameters(81,0)*_Training(i,4)*_Training(i,6)+2*_Parameters(85,0)*_Training(i,5)*_Training(i,6)+2*_Parameters(67,0)*pow(_Training(i,5),2)+3*_Parameters(83,0)*pow(_Training(i,6),2);
-                            
-                        break;
-                    case 7:
-                        _Jacobian(6,0) = _Parameters(1,0)+2*_Parameters(8,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,2)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6)+_Parameters(29,0)*_Training(i,7)+3*_Parameters(36,0)*pow(_Training(i,1),2)+2*_Parameters(37,0)*_Training(i,1)*_Training(i,2)+_Parameters(38,0)*pow(_Training(i,2),2)+2*_Parameters(40,0)*_Training(i,1)*_Training(i,3)+_Parameters(42,0)*_Training(i,2)*_Training(i,3)+_Parameters(43,0)*pow(_Training(i,3),2)+2*_Parameters(46,0)*_Training(i,1)*_Training(i,4)+_Parameters(49,0)*_Training(i,2)*_Training(i,4)+_Parameters(50,0)*_Training(i,3)*_Training(i,4)+_Parameters(52,0)*pow(_Training(i,4),2)+2*_Parameters(56,0)*_Training(i,1)*_Training(i,5)+_Parameters(60,0)*_Training(i,2)*_Training(i,5)+_Parameters(61,0)*_Training(i,3)*_Training(i,5)+_Parameters(62,0)*_Training(i,4)*_Training(i,5)+_Parameters(66,0)*pow(_Training(i,5),2)+2*_Parameters(71,0)*_Training(i,1)*_Training(i,6)+_Parameters(76,0)*_Training(i,2)*_Training(i,6)+_Parameters(77,0)*_Training(i,3)*_Training(i,6)+_Parameters(78,0)*_Training(i,4)*_Training(i,6)+_Parameters(79,0)*_Training(i,5)*_Training(i,6)+_Parameters(86,0)*pow(_Training(i,6),2)+2*_Parameters(92,0)*_Training(i,1)*_Training(i,7)+_Parameters(98,0)*_Training(i,2)*_Training(i,7)+_Parameters(99,0)*_Training(i,3)*_Training(i,7)+_Parameters(100,0)*_Training(i,4)*_Training(i,7)+_Parameters(101,0)*_Training(i,5)*_Training(i,7)+_Parameters(102,0)*_Training(i,6)*_Training(i,7)+_Parameters(113,0)*pow(_Training(i,7),2);
-                            
-                        _Jacobian(6,1) = _Parameters(2,0)+2*_Parameters(10,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,3)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6)+_Parameters(30,0)*_Training(i,7)+3*_Parameters(39,0)*pow(_Training(i,2),2)+2*_Parameters(38,0)*_Training(i,1)*_Training(i,2)+_Parameters(37,0)*pow(_Training(i,1),2)+2*_Parameters(41,0)*_Training(i,2)*_Training(i,3)+_Parameters(42,0)*_Training(i,1)*_Training(i,3)+_Parameters(44,0)*pow(_Training(i,3),2)+2*_Parameters(47,0)*_Training(i,2)*_Training(i,4)+_Parameters(49,0)*_Training(i,1)*_Training(i,4)+_Parameters(51,0)*_Training(i,3)*_Training(i,4)+_Parameters(53,0)*pow(_Training(i,4),2)+2*_Parameters(57,0)*_Training(i,2)*_Training(i,5)+_Parameters(60,0)*_Training(i,1)*_Training(i,5)+_Parameters(63,0)*_Training(i,3)*_Training(i,5)+_Parameters(64,0)*_Training(i,4)*_Training(i,5)+_Parameters(67,0)*pow(_Training(i,5),2)+2*_Parameters(72,0)*_Training(i,2)*_Training(i,6)+_Parameters(76,0)*_Training(i,1)*_Training(i,6)+_Parameters(80,0)*_Training(i,3)*_Training(i,6)+_Parameters(81,0)*_Training(i,4)*_Training(i,6)+_Parameters(82,0)*_Training(i,5)*_Training(i,6)+_Parameters(87,0)*pow(_Training(i,6),2)+2*_Parameters(93,0)*_Training(i,2)*_Training(i,7)+_Parameters(98,0)*_Training(i,1)*_Training(i,7)+_Parameters(103,0)*_Training(i,3)*_Training(i,7)+_Parameters(104,0)*_Training(i,4)*_Training(i,7)+_Parameters(105,0)*_Training(i,5)*_Training(i,7)+_Parameters(106,0)*_Training(i,6)*_Training(i,7)+_Parameters(114,0)*pow(_Training(i,7),2);
-                            
-                        _Jacobian(6,2) = _Parameters(3,0)+2*_Parameters(13,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,2)+_Parameters(11,0)*_Training(i,1)+_Parameters(16,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6)+_Parameters(31,0)*_Training(i,7)+3*_Parameters(45,0)*pow(_Training(i,3),2)+2*_Parameters(44,0)*_Training(i,3)*_Training(i,2)+_Parameters(41,0)*pow(_Training(i,2),2)+2*_Parameters(43,0)*_Training(i,1)*_Training(i,3)+_Parameters(42,0)*_Training(i,1)*_Training(i,2)+_Parameters(40,0)*pow(_Training(i,1),2)+2*_Parameters(48,0)*_Training(i,3)*_Training(i,4)+_Parameters(50,0)*_Training(i,1)*_Training(i,4)+_Parameters(51,0)*_Training(i,2)*_Training(i,4)+_Parameters(54,0)*pow(_Training(i,4),2)+2*_Parameters(58,0)*_Training(i,3)*_Training(i,5)+_Parameters(61,0)*_Training(i,1)*_Training(i,5)+_Parameters(63,0)*_Training(i,2)*_Training(i,5)+_Parameters(65,0)*_Training(i,4)*_Training(i,5)+_Parameters(68,0)*pow(_Training(i,5),2)+2*_Parameters(73,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,1)*_Training(i,6)+_Parameters(80,0)*_Training(i,2)*_Training(i,6)+_Parameters(83,0)*_Training(i,4)*_Training(i,6)+_Parameters(84,0)*_Training(i,5)*_Training(i,6)+_Parameters(88,0)*pow(_Training(i,6),2)+2*_Parameters(94,0)*_Training(i,3)*_Training(i,7)+_Parameters(99,0)*_Training(i,1)*_Training(i,7)+_Parameters(103,0)*_Training(i,2)*_Training(i,7)+_Parameters(107,0)*_Training(i,4)*_Training(i,7)+_Parameters(108,0)*_Training(i,5)*_Training(i,7)+_Parameters(109,0)*_Training(i,6)*_Training(i,7)+_Parameters(115,0)*pow(_Training(i,7),2);
-                            
-
-                        _Jacobian(6,3) = _Parameters(4,0)+_Parameters(14,0)*_Training(i,1)+_Parameters(15,0)*_Training(i,2)+_Parameters(16,0)*_Training(i,3)+2*_Parameters(17,0)*_Training(i,4)+_Parameters(21,0)*_Training(i,5)+_Parameters(26,0)*_Training(i,6)+_Parameters(32,0)*_Training(i,7)+_Parameters(46,0)*pow(_Training(i,1),2)+_Parameters(47,0)*pow(_Training(i,2),2)+_Parameters(48,0)*pow(_Training(i,3),2)+_Parameters(49,0)*_Training(i,1)*_Training(i,2)+_Parameters(50,0)*_Training(i,1)*_Training(i,3)+_Parameters(51,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(52,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(53,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(53,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(55,0)*pow(_Training(i,4),2)+2*_Parameters(59,0)*_Training(i,4)*_Training(i,5)+_Parameters(62,0)*_Training(i,1)*_Training(i,5)+_Parameters(64,0)*_Training(i,2)*_Training(i,5)+_Parameters(65,0)*_Training(i,3)*_Training(i,5)+_Parameters(69,0)*pow(_Training(i,5),2)+2*_Parameters(74,0)*_Training(i,4)*_Training(i,6)+_Parameters(78,0)*_Training(i,1)*_Training(i,6)+_Parameters(81,0)*_Training(i,2)*_Training(i,6)+_Parameters(83,0)*_Training(i,3)*_Training(i,6)+_Parameters(85,0)*_Training(i,5)*_Training(i,6)+_Parameters(89,0)*pow(_Training(i,6),2)+2*_Parameters(95,0)*_Training(i,1)*_Training(i,7)+_Parameters(100,0)*_Training(i,1)*_Training(i,7)+_Parameters(104,0)*_Training(i,2)*_Training(i,7)+_Parameters(107,0)*_Training(i,3)*_Training(i,7)+_Parameters(110,0)*_Training(i,5)*_Training(i,7)+_Parameters(111,0)*_Training(i,6)*_Training(i,7)+_Parameters(116,0)*pow(_Training(i,7),2);
-                            
-                        _Jacobian(6,4) = _Parameters(5,0)+_Parameters(18,0)*_Training(i,1)+_Parameters(19,0)*_Training(i,2)+_Parameters(20,0)*_Training(i,3)+_Parameters(21,0)*_Training(i,4)+2*_Parameters(22,0)*_Training(i,5)+_Parameters(27,0)*_Training(i,6)+_Parameters(33,0)*_Training(i,7)+_Parameters(56,0)*pow(_Training(i,1),2)+_Parameters(57,0)*pow(_Training(i,2),2)+_Parameters(58,0)*pow(_Training(i,3),2)+_Parameters(59,0)*pow(_Training(i,4),2)+_Parameters(60,0)*_Training(i,1)*_Training(i,2)+_Parameters(61,0)*_Training(i,1)*_Training(i,3)+_Parameters(62,0)*_Training(i,1)*_Training(i,4)+_Parameters(63,0)*_Training(i,2)*_Training(i,3)+_Parameters(64,0)*_Training(i,2)*_Training(i,4)+_Parameters(65,0)*_Training(i,3)*_Training(i,4)+2*_Parameters(66,0)*_Training(i,1)*_Training(i,5)+2*_Parameters(67,0)*_Training(i,2)*_Training(i,5)+2*_Parameters(68,0)*_Training(i,3)*_Training(i,5)+2*_Parameters(69,0)*_Training(i,4)*_Training(i,5)+3*_Parameters(70,0)*pow(_Training(i,5),2)+2*_Parameters(75,0)*_Training(i,5)*_Training(i,6)+_Parameters(79,0)*_Training(i,1)*_Training(i,6)+_Parameters(82,0)*_Training(i,2)*_Training(i,6)+_Parameters(84,0)*_Training(i,3)*_Training(i,6)+_Parameters(85,0)*_Training(i,4)*_Training(i,6)+_Parameters(90,0)*pow(_Training(i,6),2)+2*_Parameters(96,0)*_Training(i,5)*_Training(i,7)+_Parameters(101,0)*_Training(i,1)*_Training(i,7)+_Parameters(105,0)*_Training(i,2)*_Training(i,7)+_Parameters(108,0)*_Training(i,3)*_Training(i,7)+_Parameters(110,0)*_Training(i,4)*_Training(i,7)+_Parameters(112,0)*_Training(i,6)*_Training(i,7)+_Parameters(117,0)*pow(_Training(i,7),2);
-                            
-                        _Jacobian(6,5) = _Parameters(6,0)+_Parameters(23,0)*_Training(i,1)+_Parameters(24,0)*_Training(i,2)+_Parameters(25,0)*_Training(i,3)+_Parameters(26,0)*_Training(i,4)+_Parameters(27,0)*_Training(i,5)+2*_Parameters(28,0)*_Training(i,6)+_Parameters(34,0)*_Training(i,7)+_Parameters(71,0)*pow(_Training(i,1),2)+_Parameters(72,0)*pow(_Training(i,2),2)+_Parameters(73,0)*pow(_Training(i,3),2)+_Parameters(74,0)*pow(_Training(i,4),2)+_Parameters(75,0)*pow(_Training(i,5),2)+_Parameters(76,0)*_Training(i,1)*_Training(i,2)+_Parameters(77,0)*_Training(i,1)*_Training(i,3)+_Parameters(78,0)*_Training(i,1)*_Training(i,4)+_Parameters(79,0)*_Training(i,1)*_Training(i,5)+_Parameters(80,0)*_Training(i,2)*_Training(i,3)+_Parameters(81,0)*_Training(i,2)*_Training(i,4)+_Parameters(82,0)*_Training(i,2)*_Training(i,5)+_Parameters(83,0)*_Training(i,3)*_Training(i,4)+_Parameters(84,0)*_Training(i,3)*_Training(i,5)+_Parameters(85,0)*_Training(i,4)*_Training(i,5)+2*_Parameters(86,0)*_Training(i,1)*_Training(i,6)+2*_Parameters(87,0)*_Training(i,2)*_Training(i,6)+2*_Parameters(88,0)*_Training(i,3)*_Training(i,6)+2*_Parameters(89,0)*_Training(i,4)*_Training(i,6)+2*_Parameters(90,0)*_Training(i,5)*_Training(i,6)+3*_Parameters(91,0)*pow(_Training(i,6),2)+2*_Parameters(97,0)*_Training(i,6)*_Training(i,7)+_Parameters(102,0)*_Training(i,1)*_Training(i,7)+_Parameters(106,0)*_Training(i,2)*_Training(i,7)+_Parameters(109,0)*_Training(i,3)*_Training(i,7)+_Parameters(111,0)*_Training(i,4)*_Training(i,7)+_Parameters(112,0)*_Training(i,5)*_Training(i,7)+_Parameters(118,0)*pow(_Training(i,7),2);
-                            
-                        _Jacobian(6,6) = _Parameters(7,0)+_Parameters(29,0)*_Training(i,1)+_Parameters(30,0)*_Training(i,2)+_Parameters(31,0)*_Training(i,3)+_Parameters(32,0)*_Training(i,4)+_Parameters(33,0)*_Training(i,5)+_Parameters(34,0)*_Training(i,6)+2*_Parameters(35,0)*_Training(i,7)+_Parameters(92,0)*pow(_Training(i,1),2)+_Parameters(93,0)*pow(_Training(i,2),2)+_Parameters(94,0)*pow(_Training(i,3),2)+_Parameters(95,0)*pow(_Training(i,4),2)+_Parameters(96,0)*pow(_Training(i,5),2)+_Parameters(97,0)*pow(_Training(i,6),2)+_Parameters(98,0)*_Training(i,1)*_Training(i,2)+_Parameters(99,0)*_Training(i,1)*_Training(i,3)+_Parameters(100,0)*_Training(i,1)*_Training(i,4)+_Parameters(101,0)*_Training(i,1)*_Training(i,5)+_Parameters(102,0)*_Training(i,1)*_Training(i,6)+_Parameters(103,0)*_Training(i,2)*_Training(i,3)+_Parameters(104,0)*_Training(i,2)*_Training(i,4)+_Parameters(105,0)*_Training(i,2)*_Training(i,5)+_Parameters(106,0)*_Training(i,2)*_Training(i,6)+_Parameters(107,0)*_Training(i,3)*_Training(i,4)+_Parameters(108,0)*_Training(i,3)*_Training(i,5)+_Parameters(109,0)*_Training(i,3)*_Training(i,6)+_Parameters(110,0)*_Training(i,4)*_Training(i,5)+_Parameters(111,0)*_Training(i,4)*_Training(i,6)+_Parameters(112,0)*_Training(i,5)*_Training(i,6)+2*_Parameters(113,0)*_Training(i,1)*_Training(i,7)+2*_Parameters(114,0)*_Training(i,2)*_Training(i,7)+2*_Parameters(115,0)*_Training(i,3)*_Training(i,7)+2*_Parameters(116,0)*_Training(i,4)*_Training(i,7)+2*_Parameters(117,0)*_Training(i,5)*_Training(i,7)+2*_Parameters(118,0)*_Training(i,6)*_Training(i,7)+3*_Parameters(119,0)*pow(_Training(i,7),2);
-                            
-                        break;
-                    }
-                    break;
-                    
-                case 4:
-                    switch (d)
-                    {
-                        case 1:
-                            _Jacobian(0,0) = _Parameters(1,0)+2*_Parameters(2,0)*_Training(i,1)+3*_Parameters(3,0)*pow(_Training(i,1),2)+4*_Parameters(4,0)*pow(_Training(i,1),3);
-                            break;
-                        case 2:
-                            _Jacobian(1,0) = _Parameters(1,0)+2*_Parameters(3,0)*_Training(i,1)+_Parameters(4,0)*_Training(i,2)+3*_Parameters(6,0)*pow(_Training(i,1),2)+2*_Parameters(7,0)*_Training(i,1)*_Training(i,2)+_Parameters(8,0)*pow(_Training(i,2),2)+4*_Parameters(10,0)*pow(_Training(i,1),3)+3*_Parameters(11,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(12,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(13,0)*pow(_Training(i,2),3);
-                            
-                            _Jacobian(1,1) = _Parameters(2,0)+2*_Parameters(5,0)*_Training(i,5)+_Parameters(4,0)*_Training(i,1)+3*_Parameters(9,0)*pow(_Training(i,2),2)+2*_Parameters(8,0)*_Training(i,1)*_Training(i,2)+_Parameters(7,0)*pow(_Training(i,1),2)+4*_Parameters(14,0)*pow(_Training(i,2),3)+3*_Parameters(13,0)*pow(_Training(i,2),2)*_Training(i,1)+2*_Parameters(12,0)*_Training(i,2)*pow(_Training(i,1),2)+_Parameters(11,0)*pow(_Training(i,1),3);
-                            break;
-                    case 3:
-                        
-                            _Jacobian(2,0) = _Parameters(1,0)+2*_Parameters(4,0)*_Training(i,1)+_Parameters(5,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,3)+3*_Parameters(10,0)*pow(_Training(i,1),2)+2*_Parameters(11,0)*_Training(i,1)*_Training(i,2)+_Parameters(12,0)*pow(_Training(i,2),2)+2*_Parameters(14,0)*_Training(i,1)*_Training(i,3)+_Parameters(16,0)*_Training(i,2)*_Training(i,3)+_Parameters(17,0)*pow(_Training(i,3),2)+4*_Parameters(20,0)*pow(_Training(i,1),3)+3*_Parameters(21,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(22,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(23,0)*pow(_Training(i,2),3)+3*_Parameters(25,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(27,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(28,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(29,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(30,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(32,0)*pow(_Training(i,3),3);
-
-                        
-                        _Jacobian(2,1) = _Parameters(2,0)+2*_Parameters(6,0)*_Training(i,2)+_Parameters(5,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,3)+3*_Parameters(13,0)*pow(_Training(i,2),2)+2*_Parameters(12,0)*_Training(i,1)*_Training(i,2)+_Parameters(11,0)*pow(_Training(i,1),2)+2*_Parameters(15,0)*_Training(i,2)*_Training(i,3)+_Parameters(16,0)*_Training(i,1)*_Training(i,3)+_Parameters(18,0)*pow(_Training(i,3),2)+3*_Parameters(21,0)*pow(_Training(i,1),3)+2*_Parameters(22,0)*pow(_Training(i,1),2)*_Training(i,2)+3*_Parameters(23,0)*_Training(i,1)*pow(_Training(i,2),2)+4*_Parameters(24,0)*pow(_Training(i,2),3)+3*_Parameters(26,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(27,0)*_Training(i,1)*_Training(i,3)+2*_Parameters(28,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(30,0)*_Training(i,1)*pow(_Training(i,3),2)+2*_Parameters(31,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(33,0)*pow(_Training(i,3),3);
-                            
-
-                        _Jacobian(2,2) = _Parameters(3,0)+2*_Parameters(9,0)*_Training(i,3)+_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2)+3*_Parameters(19,0)*pow(_Training(i,3),2)+2*_Parameters(17,0)*_Training(i,1)*_Training(i,3)+_Parameters(14,0)*pow(_Training(i,1),2)+2*_Parameters(18,0)*_Training(i,2)*_Training(i,3)+_Parameters(16,0)*_Training(i,1)*_Training(i,2)+_Parameters(15,0)*pow(_Training(i,2),2)+_Parameters(25,0)*pow(_Training(i,1),3)+_Parameters(26,0)*pow(_Training(i,2),3)+_Parameters(27,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(28,0)*_Training(i,1)*pow(_Training(i,2),2)+2*_Parameters(29,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(30,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+2*_Parameters(31,0)*pow(_Training(i,2),2)*_Training(i,3)+3*_Parameters(32,0)*_Training(i,1)*pow(_Training(i,3),2)+3*_Parameters(34,0)*_Training(i,2)*pow(_Training(i,3),2)+4*_Parameters(33,0)*pow(_Training(i,3),3);
-                            
-                        break;
-                    
-                        case 4:
-                        
-                        _Jacobian(3,0) = _Parameters(1,0)+2*_Parameters(5,0)*_Training(i,1)+_Parameters(6,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,3)+_Parameters(11,0)*_Training(i,4)+3*_Parameters(15,0)*pow(_Training(i,1),2)+2*_Parameters(16,0)*_Training(i,1)*_Training(i,2)+_Parameters(17,0)*pow(_Training(i,2),2)+2*_Parameters(19,0)*_Training(i,1)*_Training(i,3)+_Parameters(21,0)*_Training(i,2)*_Training(i,3)+_Parameters(22,0)*pow(_Training(i,3),2)+2*_Parameters(25,0)*_Training(i,1)*_Training(i,4)+_Parameters(28,0)*_Training(i,2)*_Training(i,4)+_Parameters(29,0)*_Training(i,3)*_Training(i,4)+_Parameters(31,0)*pow(_Training(i,4),2)+4*_Parameters(35,0)*pow(_Training(i,1),3)+3*_Parameters(36,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(37,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(38,0)*pow(_Training(i,2),3)+3*_Parameters(40,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(42,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(43,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(44,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(45,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(47,0)*pow(_Training(i,3),3)+3*_Parameters(50,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(51,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(52,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+2*_Parameters(53,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(54,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(55,0)*pow(_Training(i,3),2)*_Training(i,4)+2*_Parameters(60,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(61,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(62,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(66,0)*pow(_Training(i,4),3);
-                        
-                        _Jacobian(3,1) = _Parameters(2,0)+2*_Parameters(7,0)*_Training(i,2)+_Parameters(6,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4)+3*_Parameters(18,0)*pow(_Training(i,2),2)+2*_Parameters(17,0)*_Training(i,1)*_Training(i,2)+_Parameters(16,0)*pow(_Training(i,1),2)+2*_Parameters(20,0)*_Training(i,2)*_Training(i,3)+_Parameters(21,0)*_Training(i,1)*_Training(i,3)+_Parameters(23,0)*pow(_Training(i,3),2)+2*_Parameters(26,0)*_Training(i,2)*_Training(i,4)+_Parameters(28,0)*_Training(i,1)*_Training(i,4)+_Parameters(30,0)*_Training(i,3)*_Training(i,4)+_Parameters(32,0)*pow(_Training(i,4),2)+3*_Parameters(36,0)*pow(_Training(i,1),3)+2*_Parameters(37,0)*pow(_Training(i,1),2)*_Training(i,2)+3*_Parameters(38,0)*_Training(i,1)*pow(_Training(i,2),2)+4*_Parameters(39,0)*pow(_Training(i,2),3)+3*_Parameters(41,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(42,0)*_Training(i,1)*_Training(i,3)+2*_Parameters(43,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(45,0)*_Training(i,1)*pow(_Training(i,3),2)+2*_Parameters(46,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(48,0)*pow(_Training(i,3),3)+_Parameters(51,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(53,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(54,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+3*_Parameters(56,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(57,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(58,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(61,0)*_Training(i,1)*pow(_Training(i,4),2)+2*_Parameters(63,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(64,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(67,0)*pow(_Training(i,4),3);
-
-
-                        
-                        _Jacobian(3,2) = _Parameters(3,0)+2*_Parameters(10,0)*_Training(i,3)+_Parameters(9,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,1)+_Parameters(13,0)*_Training(i,4)+3*_Parameters(24,0)*pow(_Training(i,3),2)+2*_Parameters(22,0)*_Training(i,1)*_Training(i,3)+_Parameters(19,0)*pow(_Training(i,1),2)+2*_Parameters(23,0)*_Training(i,2)*_Training(i,3)+_Parameters(21,0)*_Training(i,1)*_Training(i,2)+_Parameters(20,0)*pow(_Training(i,2),2)+2*_Parameters(27,0)*_Training(i,3)*_Training(i,4)+_Parameters(29,0)*_Training(i,1)*_Training(i,4)+_Parameters(30,0)*_Training(i,2)*_Training(i,4)+_Parameters(33,0)*pow(_Training(i,4),2)+_Parameters(40,0)*pow(_Training(i,1),3)+_Parameters(41,0)*pow(_Training(i,2),3)+_Parameters(42,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(43,0)*_Training(i,1)*pow(_Training(i,2),2)+2*_Parameters(44,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(45,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+2*_Parameters(46,0)*pow(_Training(i,2),2)*_Training(i,3)+3*_Parameters(47,0)*_Training(i,1)*pow(_Training(i,3),2)+3*_Parameters(48,0)*_Training(i,2)*pow(_Training(i,3),2)+4*_Parameters(49,0)*pow(_Training(i,3),3)+_Parameters(52,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(54,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(55,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(57,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(58,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+3*_Parameters(59,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(62,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(64,0)*_Training(i,2)*pow(_Training(i,4),2)+2*_Parameters(65,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(68,0)*pow(_Training(i,4),3);
-                            
-
-                        
-                        _Jacobian(3,3) = _Parameters(4,0)+_Parameters(11,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,2)+_Parameters(13,0)*_Training(i,3)+2*_Parameters(14,0)*_Training(i,4)+_Parameters(25,0)*pow(_Training(i,1),2)+_Parameters(26,0)*pow(_Training(i,2),2)+_Parameters(27,0)*pow(_Training(i,3),2)+_Parameters(28,0)*_Training(i,1)*_Training(i,2)+_Parameters(29,0)*_Training(i,1)*_Training(i,3)+_Parameters(30,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(31,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(32,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(33,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(34,0)*pow(_Training(i,4),2)+_Parameters(50,0)*pow(_Training(i,1),3)+_Parameters(51,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(52,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(53,0)*pow(_Training(i,2),2)*_Training(i,1)+_Parameters(54,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(55,0)*pow(_Training(i,3),2)*_Training(i,1)+_Parameters(56,0)*pow(_Training(i,3),3)+_Parameters(57,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(58,0)*pow(_Training(i,3),2)*_Training(i,2)+_Parameters(59,0)*pow(_Training(i,3),3)+2*_Parameters(60,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(61,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(62,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(63,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(64,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+2*_Parameters(65,0)*pow(_Training(i,3),2)*_Training(i,4)+3*_Parameters(66,0)*pow(_Training(i,4),2)*_Training(i,1)+3*_Parameters(67,0)*pow(_Training(i,4),2)*_Training(i,2)+3*_Parameters(68,0)*pow(_Training(i,4),2)*_Training(i,3)+4*_Parameters(69,0)*pow(_Training(i,4),3);
-                        
-                        break;
-                    
-                    case 5:
-                        
-                        _Jacobian(4,0) = _Parameters(1,0)+2*_Parameters(6,0)*_Training(i,1)+_Parameters(7,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,4)+_Parameters(16,0)*_Training(i,5)+3*_Parameters(21,0)*pow(_Training(i,1),2)+2*_Parameters(22,0)*_Training(i,1)*_Training(i,2)+_Parameters(23,0)*pow(_Training(i,2),2)+2*_Parameters(25,0)*_Training(i,1)*_Training(i,3)+_Parameters(27,0)*_Training(i,2)*_Training(i,3)+_Parameters(28,0)*pow(_Training(i,3),2)+2*_Parameters(31,0)*_Training(i,1)*_Training(i,4)+_Parameters(34,0)*_Training(i,2)*_Training(i,4)+_Parameters(35,0)*_Training(i,3)*_Training(i,4)+_Parameters(37,0)*pow(_Training(i,4),2)+2*_Parameters(41,0)*_Training(i,1)*_Training(i,5)+_Parameters(45,0)*_Training(i,2)*_Training(i,5)+_Parameters(46,0)*_Training(i,3)*_Training(i,5)+_Parameters(47,0)*_Training(i,4)*_Training(i,5)+_Parameters(51,0)*pow(_Training(i,5),2)+4*_Parameters(56,0)*pow(_Training(i,1),3)+3*_Parameters(57,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(58,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(59,0)*pow(_Training(i,2),3)+3*_Parameters(61,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(63,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(64,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(65,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(66,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(68,0)*pow(_Training(i,3),3)+3*_Parameters(71,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(72,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(73,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+2*_Parameters(74,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(75,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(76,0)*pow(_Training(i,3),2)*_Training(i,4)+2*_Parameters(81,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(82,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(83,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(87,0)*pow(_Training(i,4),3)+3*_Parameters(91,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(92,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(93,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(94,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(95,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(96,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(97,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(98,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(99,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(100,0)*pow(_Training(i,4),2)*_Training(i,5)+2*_Parameters(111,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(112,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(113,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(114,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(121,0)*pow(_Training(i,5),3);
-                        
-                        _Jacobian(4,1) = _Parameters(2,0)+2*_Parameters(8,0)*_Training(i,2)+_Parameters(7,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5)+3*_Parameters(24,0)*pow(_Training(i,2),2)+2*_Parameters(23,0)*_Training(i,1)*_Training(i,2)+_Parameters(22,0)*pow(_Training(i,1),2)+2*_Parameters(26,0)*_Training(i,2)*_Training(i,3)+_Parameters(27,0)*_Training(i,1)*_Training(i,3)+_Parameters(29,0)*pow(_Training(i,3),2)+2*_Parameters(32,0)*_Training(i,2)*_Training(i,4)+_Parameters(34,0)*_Training(i,1)*_Training(i,4)+_Parameters(36,0)*_Training(i,3)*_Training(i,4)+_Parameters(38,0)*pow(_Training(i,4),2)+2*_Parameters(42,0)*_Training(i,2)*_Training(i,5)+_Parameters(45,0)*_Training(i,1)*_Training(i,5)+_Parameters(48,0)*_Training(i,3)*_Training(i,5)+_Parameters(49,0)*_Training(i,4)*_Training(i,5)+_Parameters(52,0)*pow(_Training(i,5),2)+3*_Parameters(57,0)*pow(_Training(i,1),3)+2*_Parameters(58,0)*pow(_Training(i,1),2)*_Training(i,2)+3*_Parameters(59,0)*_Training(i,1)*pow(_Training(i,2),2)+4*_Parameters(60,0)*pow(_Training(i,2),3)+3*_Parameters(62,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(63,0)*_Training(i,1)*_Training(i,3)+2*_Parameters(64,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(66,0)*_Training(i,1)*pow(_Training(i,3),2)+2*_Parameters(67,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(69,0)*pow(_Training(i,3),3)+_Parameters(72,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(74,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(75,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+3*_Parameters(77,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(78,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(79,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(82,0)*_Training(i,1)*pow(_Training(i,4),2)+2*_Parameters(84,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(85,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(88,0)*pow(_Training(i,4),3)+_Parameters(92,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(99,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(95,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(96,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(102,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(103,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(104,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+3*_Parameters(101,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(105,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(106,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(114,0)*_Training(i,1)*pow(_Training(i,5),2)+2*_Parameters(115,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(116,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(117,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(122,0)*pow(_Training(i,5),3);
-
-                            
-                        _Jacobian(4,2) = _Parameters(3,0)+2*_Parameters(11,0)*_Training(i,3)+_Parameters(9,0)*_Training(i,1)+_Parameters(10,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+3*_Parameters(30,0)*pow(_Training(i,3),2)+2*_Parameters(28,0)*_Training(i,1)*_Training(i,3)+_Parameters(25,0)*pow(_Training(i,1),2)+2*_Parameters(29,0)*_Training(i,2)*_Training(i,3)+_Parameters(27,0)*_Training(i,1)*_Training(i,2)+_Parameters(26,0)*pow(_Training(i,2),2)+2*_Parameters(33,0)*_Training(i,3)*_Training(i,4)+_Parameters(35,0)*_Training(i,1)*_Training(i,4)+_Parameters(36,0)*_Training(i,2)*_Training(i,4)+_Parameters(39,0)*pow(_Training(i,4),2)+2*_Parameters(43,0)*_Training(i,3)*_Training(i,5)+_Parameters(46,0)*_Training(i,1)*_Training(i,5)+_Parameters(48,0)*_Training(i,2)*_Training(i,5)+_Parameters(50,0)*_Training(i,4)*_Training(i,5)+_Parameters(53,0)*pow(_Training(i,5),2)+_Parameters(61,0)*pow(_Training(i,1),3)+_Parameters(62,0)*pow(_Training(i,2),3)+_Parameters(63,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(64,0)*_Training(i,1)*pow(_Training(i,2),2)+2*_Parameters(65,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(66,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+2*_Parameters(67,0)*pow(_Training(i,2),2)*_Training(i,3)+3*_Parameters(68,0)*_Training(i,1)*pow(_Training(i,3),2)+3*_Parameters(69,0)*_Training(i,2)*pow(_Training(i,3),2)+4*_Parameters(70,0)*pow(_Training(i,3),3)+_Parameters(73,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(75,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(76,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(78,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(79,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+3*_Parameters(80,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(83,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(85,0)*_Training(i,2)*pow(_Training(i,4),2)+2*_Parameters(86,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(89,0)*pow(_Training(i,4),3)+_Parameters(93,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(95,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(99,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(97,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(105,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(104,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(108,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(102,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(107,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(109,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(113,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(116,0)*_Training(i,2)*pow(_Training(i,5),2)+2*_Parameters(118,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(119,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(123,0)*pow(_Training(i,5),3);
-                            
-                        _Jacobian(4,3) = _Parameters(4,0)+2*_Parameters(15,0)*_Training(i,4)+_Parameters(12,0)*_Training(i,1)+_Parameters(13,0)*_Training(i,2)+_Parameters(14,0)*_Training(i,3)+_Parameters(19,0)*_Training(i,5)+3*_Parameters(40,0)*pow(_Training(i,4),2)+2*_Parameters(37,0)*_Training(i,1)*_Training(i,4)+_Parameters(31,0)*pow(_Training(i,1),2)+2*_Parameters(38,0)*_Training(i,2)*_Training(i,4)+_Parameters(34,0)*_Training(i,1)*_Training(i,2)+_Parameters(32,0)*pow(_Training(i,2),2)+2*_Parameters(39,0)*_Training(i,3)*_Training(i,4)+_Parameters(35,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*_Training(i,2)*_Training(i,3)+_Parameters(33,0)*pow(_Training(i,3),2)+2*_Parameters(44,0)*_Training(i,4)*_Training(i,5)+_Parameters(47,0)*_Training(i,1)*_Training(i,5)+_Parameters(49,0)*_Training(i,2)*_Training(i,5)+_Parameters(50,0)*_Training(i,3)*_Training(i,5)+_Parameters(54,0)*pow(_Training(i,5),2)+_Parameters(71,0)*pow(_Training(i,1),3)+_Parameters(72,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(73,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(74,0)*pow(_Training(i,2),2)*_Training(i,1)+_Parameters(75,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(76,0)*pow(_Training(i,3),2)*_Training(i,1)+_Parameters(77,0)*pow(_Training(i,3),3)+_Parameters(78,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(79,0)*pow(_Training(i,3),2)*_Training(i,2)+_Parameters(80,0)*pow(_Training(i,3),3)+2*_Parameters(81,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(82,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(83,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(84,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(85,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+2*_Parameters(86,0)*pow(_Training(i,3),2)*_Training(i,4)+3*_Parameters(87,0)*pow(_Training(i,4),2)*_Training(i,1)+3*_Parameters(88,0)*pow(_Training(i,4),2)*_Training(i,2)+3*_Parameters(89,0)*pow(_Training(i,4),2)*_Training(i,3)+4*_Parameters(90,0)*pow(_Training(i,4),3)+_Parameters(94,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(96,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(97,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(100,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(104,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(106,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(109,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(103,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(108,0)*pow(_Training(i,3),2)*_Training(i,5)+3*_Parameters(110,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(114,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(117,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(119,0)*_Training(i,3)*pow(_Training(i,5),2)+2*_Parameters(120,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(124,0)*pow(_Training(i,5),3);
-                            
-                            
-                        _Jacobian(4,4) = _Parameters(5,0)+2*_Parameters(20,0)*_Training(i,5)+_Parameters(16,0)*_Training(i,1)+_Parameters(17,0)*_Training(i,2)+_Parameters(18,0)*_Training(i,3)+_Parameters(19,0)*_Training(i,4)+3*_Parameters(55,0)*pow(_Training(i,5),2)+2*_Parameters(51,0)*_Training(i,1)*_Training(i,5)+_Parameters(41,0)*pow(_Training(i,1),2)+2*_Parameters(52,0)*_Training(i,2)*_Training(i,5)+_Parameters(45,0)*_Training(i,1)*_Training(i,2)+_Parameters(42,0)*pow(_Training(i,2),2)+2*_Parameters(53,0)*_Training(i,3)*_Training(i,5)+_Parameters(46,0)*_Training(i,1)*_Training(i,3)+_Parameters(48,0)*_Training(i,2)*_Training(i,3)+_Parameters(43,0)*pow(_Training(i,3),2)+2*_Parameters(54,0)*_Training(i,4)*_Training(i,5)+_Parameters(47,0)*_Training(i,1)*_Training(i,4)+_Parameters(49,0)*_Training(i,2)*_Training(i,4)+_Parameters(50,0)*_Training(i,3)*_Training(i,4)+_Parameters(44,0)*pow(_Training(i,4),2)+_Parameters(91,0)*pow(_Training(i,1),3)+_Parameters(92,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(98,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(103,0)*pow(_Training(i,2),3)+_Parameters(93,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(95,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(102,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(99,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(105,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(107,0)*pow(_Training(i,3),3)+_Parameters(94,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(96,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(97,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(103,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(104,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(108,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(100,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(106,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(109,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(110,0)*pow(_Training(i,4),3)+2*_Parameters(111,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(112,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(113,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(114,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(116,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(117,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(119,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+2*_Parameters(115,0)*pow(_Training(i,2),2)*_Training(i,5)+2*_Parameters(118,0)*pow(_Training(i,3),2)*_Training(i,5)+2*_Parameters(120,0)*pow(_Training(i,4),2)*_Training(i,5)+3*_Parameters(121,0)*_Training(i,1)*pow(_Training(i,5),2)+3*_Parameters(122,0)*_Training(i,2)*pow(_Training(i,5),2)+3*_Parameters(123,0)*_Training(i,3)*pow(_Training(i,5),2)+3*_Parameters(124,0)*_Training(i,4)*pow(_Training(i,5),2)+4*_Parameters(125,0)*pow(_Training(i,5),3);
-                            
-
-                        
-                        break;
-                    
-                    case 6:
-                    
-                        _Jacobian(5,0) = _Parameters(1,0)+2*_Parameters(7,0)*_Training(i,1)+_Parameters(8,0)*_Training(i,2)+_Parameters(10,0)*_Training(i,3)+_Parameters(13,0)*_Training(i,4)+_Parameters(17,0)*_Training(i,5)+_Parameters(22,0)*_Training(i,6)+3*_Parameters(28,0)*pow(_Training(i,1),2)+2*_Parameters(29,0)*_Training(i,1)*_Training(i,2)+_Parameters(30,0)*pow(_Training(i,2),2)+2*_Parameters(32,0)*_Training(i,1)*_Training(i,2)+_Parameters(34,0)*_Training(i,2)*_Training(i,3)+_Parameters(35,0)*pow(_Training(i,3),2)+2*_Parameters(38,0)*_Training(i,1)*_Training(i,4)+_Parameters(41,0)*_Training(i,2)*_Training(i,4)+_Parameters(42,0)*_Training(i,3)*_Training(i,4)+_Parameters(44,0)*pow(_Training(i,4),2)+2*_Parameters(48,0)*_Training(i,1)*_Training(i,5)+_Parameters(52,0)*_Training(i,2)*_Training(i,5)+_Parameters(53,0)*_Training(i,3)*_Training(i,5)+_Parameters(54,0)*_Training(i,4)*_Training(i,5)+_Parameters(58,0)*pow(_Training(i,5),2)+2*_Parameters(63,0)*_Training(i,1)*_Training(i,6)+_Parameters(68,0)*_Training(i,2)*_Training(i,6)+_Parameters(69,0)*_Training(i,3)*_Training(i,6)+_Parameters(70,0)*_Training(i,4)*_Training(i,6)+_Parameters(71,0)*_Training(i,5)*_Training(i,6)+_Parameters(78,0)*pow(_Training(i,6),2)+4*_Parameters(84,0)*pow(_Training(i,1),3)+3*_Parameters(85,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(86,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(87,0)*pow(_Training(i,2),3)+3*_Parameters(89,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(91,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(92,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(93,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(94,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(96,0)*pow(_Training(i,3),3)+3*_Parameters(99,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(100,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(101,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+2*_Parameters(102,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(103,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(104,0)*pow(_Training(i,3),2)*_Training(i,4)+2*_Parameters(109,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(110,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(111,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(115,0)*pow(_Training(i,4),3)+3*_Parameters(119,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(120,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(121,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(122,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(123,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(124,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(125,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(126,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(127,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(128,0)*pow(_Training(i,4),2)*_Training(i,5)+2*_Parameters(139,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(140,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(141,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(142,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(149,0)*pow(_Training(i,5),3)+3*_Parameters(154,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(155,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(156,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(157,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(158,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(159,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(160,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(161,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(162,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(163,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(164,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(165,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(166,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(167,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(168,0)*pow(_Training(i,5),2)*_Training(i,6)+2*_Parameters(189,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(190,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(191,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(192,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(193,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(203,0)*pow(_Training(i,6),3);
-                            
-                        _Jacobian(5,1) = _Parameters(2,0)+2*_Parameters(9,0)*_Training(i,2)+_Parameters(8,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6)+3*_Parameters(31,0)*pow(_Training(i,2),2)+2*_Parameters(30,0)*_Training(i,1)*_Training(i,2)+_Parameters(29,0)*pow(_Training(i,1),2)+2*_Parameters(33,0)*_Training(i,2)*_Training(i,3)+_Parameters(34,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*pow(_Training(i,3),2)+2*_Parameters(39,0)*_Training(i,2)*_Training(i,4)+_Parameters(41,0)*_Training(i,1)*_Training(i,4)+_Parameters(43,0)*_Training(i,3)*_Training(i,4)+_Parameters(45,0)*pow(_Training(i,4),2)+2*_Parameters(49,0)*_Training(i,2)*_Training(i,5)+_Parameters(52,0)*_Training(i,1)*_Training(i,5)+_Parameters(55,0)*_Training(i,3)*_Training(i,5)+_Parameters(56,0)*_Training(i,4)*_Training(i,5)+_Parameters(59,0)*pow(_Training(i,5),2)+2*_Parameters(64,0)*_Training(i,2)*_Training(i,6)+_Parameters(68,0)*_Training(i,1)*_Training(i,6)+_Parameters(72,0)*_Training(i,3)*_Training(i,6)+_Parameters(73,0)*_Training(i,4)*_Training(i,6)+_Parameters(74,0)*_Training(i,5)*_Training(i,6)+_Parameters(79,0)*pow(_Training(i,6),2)+3*_Parameters(85,0)*pow(_Training(i,1),3)+2*_Parameters(86,0)*pow(_Training(i,1),2)*_Training(i,2)+3*_Parameters(87,0)*_Training(i,1)*pow(_Training(i,2),2)+4*_Parameters(88,0)*pow(_Training(i,2),3)+3*_Parameters(90,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(91,0)*_Training(i,1)*_Training(i,3)+2*_Parameters(92,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(94,0)*_Training(i,1)*pow(_Training(i,3),2)+2*_Parameters(95,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(97,0)*pow(_Training(i,3),3)+_Parameters(100,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(102,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(103,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+3*_Parameters(105,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(106,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(107,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(110,0)*_Training(i,1)*pow(_Training(i,4),2)+2*_Parameters(112,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(113,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(116,0)*pow(_Training(i,4),3)+_Parameters(120,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(127,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(123,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(124,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(130,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(131,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(132,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+3*_Parameters(129,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(133,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(134,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(142,0)*_Training(i,1)*pow(_Training(i,5),2)+2*_Parameters(143,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(144,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(145,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(150,0)*pow(_Training(i,5),3)+_Parameters(155,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(165,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(159,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(160,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(161,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(170,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(171,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(172,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(173,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(174,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(175,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+3*_Parameters(169,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(176,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(177,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(178,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(190,0)*_Training(i,1)*pow(_Training(i,6),2)+2*_Parameters(194,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(195,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(196,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(197,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(204,0)*pow(_Training(i,6),3);
-                        
-                        _Jacobian(5,2) = _Parameters(3,0)+_Parameters(10,0)*_Training(i,1)+_Parameters(11,0)*_Training(i,2)+2*_Parameters(12,0)*_Training(i,3)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6)+_Parameters(32,0)*pow(_Training(i,1),2)+_Parameters(33,0)*pow(_Training(i,2),2)+_Parameters(34,0)*_Training(i,1)*_Training(i,2)+2*_Parameters(35,0)*_Training(i,1)*_Training(i,3)+_Parameters(36,0)*_Training(i,2)*_Training(i,3)+3*_Parameters(37,0)*pow(_Training(i,3),2)+2*_Parameters(40,0)*_Training(i,3)*_Training(i,4)+_Parameters(42,0)*_Training(i,1)*_Training(i,4)+_Parameters(43,0)*_Training(i,2)*_Training(i,4)+_Parameters(46,0)*pow(_Training(i,4),2)+2*_Parameters(50,0)*_Training(i,3)*_Training(i,5)+_Parameters(53,0)*_Training(i,1)*_Training(i,5)+_Parameters(55,0)*_Training(i,2)*_Training(i,5)+_Parameters(57,0)*_Training(i,4)*_Training(i,5)+_Parameters(60,0)*pow(_Training(i,5),2)+2*_Parameters(65,0)*_Training(i,3)*_Training(i,6)+_Parameters(69,0)*_Training(i,1)*_Training(i,6)+_Parameters(72,0)*_Training(i,2)*_Training(i,6)+_Parameters(75,0)*_Training(i,4)*_Training(i,6)+_Parameters(76,0)*_Training(i,5)*_Training(i,6)+_Parameters(80,0)*pow(_Training(i,6),2)+_Parameters(89,0)*pow(_Training(i,1),3)+_Parameters(90,0)*pow(_Training(i,2),3)+_Parameters(91,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(92,0)*_Training(i,1)*pow(_Training(i,2),2)+2*_Parameters(93,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(94,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+2*_Parameters(95,0)*pow(_Training(i,2),2)*_Training(i,3)+3*_Parameters(96,0)*_Training(i,1)*pow(_Training(i,3),2)+3*_Parameters(97,0)*_Training(i,2)*pow(_Training(i,3),2)+4*_Parameters(98,0)*pow(_Training(i,3),3)+_Parameters(101,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(103,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(104,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(106,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(107,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+3*_Parameters(108,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(111,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(113,0)*_Training(i,2)*pow(_Training(i,4),2)+2*_Parameters(114,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(117,0)*pow(_Training(i,4),3)+_Parameters(121,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(123,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(127,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(125,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(133,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(132,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(136,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(130,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(135,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(137,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(141,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(144,0)*_Training(i,2)*pow(_Training(i,5),2)+2*_Parameters(146,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(147,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(150,0)*pow(_Training(i,5),3)+_Parameters(156,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(159,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(166,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(162,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(163,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(176,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(173,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(174,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(180,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(181,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(182,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(170,0)*pow(_Training(i,2),2)*_Training(i,6)+3*_Parameters(179,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(183,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(184,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(191,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(195,0)*_Training(i,2)*pow(_Training(i,6),2)+2*_Parameters(198,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(200,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(201,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(207,0)*pow(_Training(i,6),3);
-                            
-                        _Jacobian(5,3) = _Parameters(4,0)+_Parameters(13,0)*_Training(i,1)+_Parameters(14,0)*_Training(i,2)+_Parameters(15,0)*_Training(i,3)+2*_Parameters(16,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6)+_Parameters(38,0)*pow(_Training(i,1),2)+_Parameters(39,0)*pow(_Training(i,2),2)+_Parameters(40,0)*pow(_Training(i,3),2)+_Parameters(41,0)*_Training(i,1)*_Training(i,2)+_Parameters(42,0)*_Training(i,1)*_Training(i,3)+_Parameters(43,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(44,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(45,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(46,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(47,0)*pow(_Training(i,4),2)+2*_Parameters(51,0)*_Training(i,4)*_Training(i,5)+_Parameters(54,0)*_Training(i,1)*_Training(i,5)+_Parameters(56,0)*_Training(i,2)*_Training(i,5)+_Parameters(57,0)*_Training(i,3)*_Training(i,5)+_Parameters(61,0)*pow(_Training(i,5),2)+2*_Parameters(66,0)*_Training(i,4)*_Training(i,6)+_Parameters(70,0)*_Training(i,1)*_Training(i,6)+_Parameters(73,0)*_Training(i,2)*_Training(i,6)+_Parameters(75,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,5)*_Training(i,6)+_Parameters(81,0)*pow(_Training(i,6),2)+_Parameters(99,0)*pow(_Training(i,1),3)+_Parameters(100,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(101,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(102,0)*pow(_Training(i,2),2)*_Training(i,1)+_Parameters(103,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(104,0)*pow(_Training(i,3),2)*_Training(i,1)+_Parameters(105,0)*pow(_Training(i,3),3)+_Parameters(106,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(107,0)*pow(_Training(i,3),2)*_Training(i,2)+_Parameters(108,0)*pow(_Training(i,3),3)+2*_Parameters(109,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(110,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(111,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(112,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(113,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+2*_Parameters(114,0)*pow(_Training(i,3),2)*_Training(i,4)+3*_Parameters(115,0)*pow(_Training(i,4),2)*_Training(i,1)+3*_Parameters(116,0)*pow(_Training(i,4),2)*_Training(i,2)+3*_Parameters(117,0)*pow(_Training(i,4),2)*_Training(i,3)+4*_Parameters(118,0)*pow(_Training(i,4),3)+_Parameters(122,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(124,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(125,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(128,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(132,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(134,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(137,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(131,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(136,0)*pow(_Training(i,3),2)*_Training(i,5)+3*_Parameters(138,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(142,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(145,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(147,0)*_Training(i,3)*pow(_Training(i,5),2)+2*_Parameters(148,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(152,0)*pow(_Training(i,5),3)+_Parameters(156,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(160,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(162,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(167,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(164,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(173,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(177,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(175,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(183,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(182,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(186,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(172,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(180,0)*pow(_Training(i,3),2)*_Training(i,6)+3*_Parameters(185,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(188,0)*pow(_Training(i,5),2)*_Training(i,6)+2*_Parameters(192,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(196,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(199,0)*_Training(i,3)*pow(_Training(i,6),2)+2*_Parameters(201,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(202,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(207,0)*pow(_Training(i,6),3);
-                        
-                        _Jacobian(5,4) = _Parameters(5,0)+_Parameters(17,0)*_Training(i,1)+_Parameters(18,0)*_Training(i,2)+_Parameters(19,0)*_Training(i,3)+2*_Parameters(21,0)*_Training(i,5)+_Parameters(20,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,6)+_Parameters(48,0)*pow(_Training(i,1),2)+_Parameters(49,0)*pow(_Training(i,2),2)+_Parameters(50,0)*pow(_Training(i,3),2)+_Parameters(51,0)*pow(_Training(i,4),2)+_Parameters(52,0)*_Training(i,1)*_Training(i,2)+_Parameters(53,0)*_Training(i,1)*_Training(i,3)+_Parameters(54,0)*_Training(i,1)*_Training(i,4)+_Parameters(55,0)*_Training(i,2)*_Training(i,3)+_Parameters(56,0)*_Training(i,2)*_Training(i,4)+_Parameters(57,0)*_Training(i,3)*_Training(i,4)+2*_Parameters(58,0)*_Training(i,1)*_Training(i,5)+2*_Parameters(59,0)*_Training(i,2)*_Training(i,5)+2*_Parameters(60,0)*_Training(i,3)*_Training(i,5)+2*_Parameters(61,0)*_Training(i,4)*_Training(i,5)+3*_Parameters(62,0)*pow(_Training(i,5),2)+2*_Parameters(67,0)*_Training(i,5)*_Training(i,6)+_Parameters(71,0)*_Training(i,1)*_Training(i,6)+_Parameters(74,0)*_Training(i,2)*_Training(i,6)+_Parameters(76,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,4)*_Training(i,6)+_Parameters(82,0)*pow(_Training(i,6),2)+_Parameters(119,0)*pow(_Training(i,1),3)+_Parameters(120,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(126,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(131,0)*pow(_Training(i,2),3)+_Parameters(121,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(123,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(130,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(127,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(133,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(135,0)*pow(_Training(i,3),3)+_Parameters(122,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(124,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(125,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(131,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(132,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(136,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(100,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(106,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(137,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(138,0)*pow(_Training(i,4),3)+2*_Parameters(139,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(140,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(141,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(142,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(144,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(145,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(147,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+2*_Parameters(143,0)*pow(_Training(i,2),2)*_Training(i,5)+2*_Parameters(146,0)*pow(_Training(i,3),2)*_Training(i,5)+2*_Parameters(148,0)*pow(_Training(i,4),2)*_Training(i,5)+3*_Parameters(149,0)*_Training(i,1)*pow(_Training(i,5),2)+3*_Parameters(150,0)*_Training(i,2)*pow(_Training(i,5),2)+3*_Parameters(151,0)*_Training(i,3)*pow(_Training(i,5),2)+3*_Parameters(152,0)*_Training(i,4)*pow(_Training(i,5),2)+4*_Parameters(153,0)*pow(_Training(i,5),3)+_Parameters(158,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(161,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(163,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(164,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(168,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(174,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(175,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(178,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(182,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(184,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(187,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(172,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(181,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(186,0)*pow(_Training(i,4),2)*_Training(i,6)+2*_Parameters(188,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(193,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(197,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(200,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(202,0)*_Training(i,4)*pow(_Training(i,6),2)+2*_Parameters(203,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(208,0)*pow(_Training(i,6),3);
-                        
-                        _Jacobian(5,5) = _Parameters(6,0)+_Parameters(22,0)*_Training(i,1)+_Parameters(23,0)*_Training(i,2)+_Parameters(24,0)*_Training(i,3)+2*_Parameters(27,0)*_Training(i,6)+_Parameters(25,0)*_Training(i,4)+_Parameters(26,0)*_Training(i,5)+_Parameters(63,0)*pow(_Training(i,1),2)+_Parameters(64,0)*pow(_Training(i,2),2)+_Parameters(65,0)*pow(_Training(i,3),2)+_Parameters(66,0)*pow(_Training(i,4),2)+_Parameters(68,0)*_Training(i,1)*_Training(i,2)+_Parameters(69,0)*_Training(i,1)*_Training(i,3)+_Parameters(70,0)*_Training(i,1)*_Training(i,4)+_Parameters(71,0)*_Training(i,1)*_Training(i,5)+_Parameters(72,0)*_Training(i,2)*_Training(i,3)+_Parameters(73,0)*_Training(i,2)*_Training(i,4)+_Parameters(74,0)*_Training(i,2)*_Training(i,5)+_Parameters(75,0)*_Training(i,3)*_Training(i,4)+_Parameters(76,0)*_Training(i,3)*_Training(i,5)+_Parameters(77,0)*_Training(i,4)*_Training(i,5)+2*_Parameters(78,0)*_Training(i,1)*_Training(i,6)+2*_Parameters(79,0)*_Training(i,2)*_Training(i,6)+2*_Parameters(80,0)*_Training(i,3)*_Training(i,6)+2*_Parameters(81,0)*_Training(i,4)*_Training(i,6)+2*_Parameters(85,0)*_Training(i,5)*_Training(i,6)+2*_Parameters(67,0)*pow(_Training(i,5),2)+3*_Parameters(83,0)*pow(_Training(i,6),2)+_Parameters(154,0)*pow(_Training(i,1),3)+_Parameters(155,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(165,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(169,0)*pow(_Training(i,2),3)+_Parameters(156,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(159,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(170,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(166,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(176,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(179,0)*pow(_Training(i,3),3)+3*_Parameters(157,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(160,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(162,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(171,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(173,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(180,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(167,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(177,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(183,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(185,0)*pow(_Training(i,4),3)+3*_Parameters(158,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(161,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(163,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(164,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(174,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(175,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(182,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(172,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(181,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(186,0)*pow(_Training(i,4),2)*_Training(i,5)+2*_Parameters(168,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(178,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(184,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(187,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(188,0)*pow(_Training(i,5),3)+2*_Parameters(189,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(190,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(191,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(192,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(193,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(195,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(196,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(197,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(199,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(200,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(202,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+2*_Parameters(195,0)*pow(_Training(i,2),2)*_Training(i,6)+2*_Parameters(198,0)*pow(_Training(i,3),2)*_Training(i,6)+2*_Parameters(196,0)*pow(_Training(i,4),2)*_Training(i,6)+2*_Parameters(203,0)*pow(_Training(i,5),2)*_Training(i,6)+3*_Parameters(204,0)*_Training(i,1)*pow(_Training(i,6),2)+3*_Parameters(205,0)*_Training(i,2)*pow(_Training(i,6),2)+3*_Parameters(206,0)*_Training(i,3)*pow(_Training(i,6),2)+3*_Parameters(207,0)*_Training(i,4)*pow(_Training(i,6),2)+3*_Parameters(208,0)*_Training(i,5)*pow(_Training(i,6),2)+4*_Parameters(209,0)*pow(_Training(i,6),3);
-                            
-                        
-                            
-                        break;
-                            
-                    case 7:
-                            
-                        _Jacobian(6,0) = _Parameters(1,0)+2*_Parameters(8,0)*_Training(i,1)+_Parameters(9,0)*_Training(i,2)+_Parameters(11,0)*_Training(i,3)+_Parameters(14,0)*_Training(i,4)+_Parameters(18,0)*_Training(i,5)+_Parameters(23,0)*_Training(i,6)+_Parameters(29,0)*_Training(i,7)+3*_Parameters(36,0)*pow(_Training(i,1),2)+2*_Parameters(37,0)*_Training(i,1)*_Training(i,2)+_Parameters(38,0)*pow(_Training(i,2),2)+2*_Parameters(40,0)*_Training(i,1)*_Training(i,3)+_Parameters(42,0)*_Training(i,2)*_Training(i,3)+_Parameters(43,0)*pow(_Training(i,3),2)+2*_Parameters(46,0)*_Training(i,1)*_Training(i,4)+_Parameters(49,0)*_Training(i,2)*_Training(i,4)+_Parameters(50,0)*_Training(i,3)*_Training(i,4)+_Parameters(52,0)*pow(_Training(i,4),2)+2*_Parameters(56,0)*_Training(i,1)*_Training(i,5)+_Parameters(60,0)*_Training(i,2)*_Training(i,5)+_Parameters(61,0)*_Training(i,3)*_Training(i,5)+_Parameters(62,0)*_Training(i,4)*_Training(i,5)+_Parameters(66,0)*pow(_Training(i,5),2)+2*_Parameters(71,0)*_Training(i,1)*_Training(i,6)+_Parameters(76,0)*_Training(i,2)*_Training(i,6)+_Parameters(77,0)*_Training(i,3)*_Training(i,6)+_Parameters(78,0)*_Training(i,4)*_Training(i,6)+_Parameters(79,0)*_Training(i,5)*_Training(i,6)+_Parameters(86,0)*pow(_Training(i,6),2)+2*_Parameters(92,0)*_Training(i,1)*_Training(i,7)+_Parameters(98,0)*_Training(i,2)*_Training(i,7)+_Parameters(99,0)*_Training(i,3)*_Training(i,7)+_Parameters(100,0)*_Training(i,4)*_Training(i,7)+_Parameters(101,0)*_Training(i,5)*_Training(i,7)+_Parameters(102,0)*_Training(i,6)*_Training(i,7)+_Parameters(113,0)*pow(_Training(i,7),2)+4*_Parameters(120,0)*pow(_Training(i,1),3)+3*_Parameters(121,0)*pow(_Training(i,1),2)*_Training(i,2)+2*_Parameters(122,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(123,0)*pow(_Training(i,2),3)+3*_Parameters(125,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(127,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(128,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(129,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(130,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(132,0)*pow(_Training(i,3),3)+3*_Parameters(99,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(136,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(137,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+2*_Parameters(138,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(139,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(140,0)*pow(_Training(i,3),2)*_Training(i,4)+2*_Parameters(145,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(146,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(147,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(151,0)*pow(_Training(i,4),3)+3*_Parameters(155,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(156,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(157,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(158,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(159,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(160,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(161,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(162,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(163,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(164,0)*pow(_Training(i,4),2)*_Training(i,5)+2*_Parameters(175,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(176,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(177,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(178,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(185,0)*pow(_Training(i,5),3)+3*_Parameters(190,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(191,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(156,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(193,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(194,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(195,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(196,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(197,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(198,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(199,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(200,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(201,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(202,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(203,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(204,0)*pow(_Training(i,5),2)*_Training(i,6)+2*_Parameters(225,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(226,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(227,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(228,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(229,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(239,0)*pow(_Training(i,6),3)+3*_Parameters(246,0)*pow(_Training(i,1),2)*_Training(i,7)+2*_Parameters(247,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+2*_Parameters(248,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+2*_Parameters(249,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+2*_Parameters(250,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+2*_Parameters(251,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+_Parameters(252,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+_Parameters(253,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+_Parameters(254,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+_Parameters(255,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+_Parameters(256,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+_Parameters(257,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+_Parameters(258,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+_Parameters(259,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+_Parameters(260,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+_Parameters(261,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+_Parameters(262,0)*pow(_Training(i,2),2)*_Training(i,7)+_Parameters(263,0)*pow(_Training(i,3),2)*_Training(i,7)+_Parameters(264,0)*pow(_Training(i,4),2)*_Training(i,7)+_Parameters(265,0)*pow(_Training(i,5),2)*_Training(i,7)+_Parameters(266,0)*pow(_Training(i,6),2)*_Training(i,7)+2*_Parameters(302,0)*_Training(i,1)*pow(_Training(i,7),2)+_Parameters(303,0)*_Training(i,2)*pow(_Training(i,7),2)+_Parameters(304,0)*_Training(i,3)*pow(_Training(i,7),2)+_Parameters(305,0)*_Training(i,4)*pow(_Training(i,7),2)+_Parameters(306,0)*_Training(i,5)*pow(_Training(i,7),2)+_Parameters(307,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(323,0)*pow(_Training(i,7),3);
-
-                        _Jacobian(6,1) = _Parameters(2,0)+2*_Parameters(10,0)*_Training(i,2)+_Parameters(9,0)*_Training(i,1)+_Parameters(12,0)*_Training(i,3)+_Parameters(15,0)*_Training(i,4)+_Parameters(19,0)*_Training(i,5)+_Parameters(24,0)*_Training(i,6)+_Parameters(30,0)*_Training(i,7)+3*_Parameters(39,0)*pow(_Training(i,2),2)+2*_Parameters(38,0)*_Training(i,1)*_Training(i,2)+_Parameters(37,0)*pow(_Training(i,1),2)+2*_Parameters(41,0)*_Training(i,2)*_Training(i,3)+_Parameters(42,0)*_Training(i,1)*_Training(i,3)+_Parameters(44,0)*pow(_Training(i,3),2)+2*_Parameters(47,0)*_Training(i,2)*_Training(i,4)+_Parameters(49,0)*_Training(i,1)*_Training(i,4)+_Parameters(51,0)*_Training(i,3)*_Training(i,4)+_Parameters(53,0)*pow(_Training(i,4),2)+2*_Parameters(57,0)*_Training(i,2)*_Training(i,5)+_Parameters(60,0)*_Training(i,1)*_Training(i,5)+_Parameters(63,0)*_Training(i,3)*_Training(i,5)+_Parameters(64,0)*_Training(i,4)*_Training(i,5)+_Parameters(67,0)*pow(_Training(i,5),2)+2*_Parameters(72,0)*_Training(i,2)*_Training(i,6)+_Parameters(76,0)*_Training(i,1)*_Training(i,6)+_Parameters(80,0)*_Training(i,3)*_Training(i,6)+_Parameters(81,0)*_Training(i,4)*_Training(i,6)+_Parameters(82,0)*_Training(i,5)*_Training(i,6)+_Parameters(87,0)*pow(_Training(i,6),2)+2*_Parameters(93,0)*_Training(i,2)*_Training(i,7)+_Parameters(98,0)*_Training(i,1)*_Training(i,7)+_Parameters(103,0)*_Training(i,3)*_Training(i,7)+_Parameters(104,0)*_Training(i,4)*_Training(i,7)+_Parameters(105,0)*_Training(i,5)*_Training(i,7)+_Parameters(106,0)*_Training(i,6)*_Training(i,7)+_Parameters(114,0)*pow(_Training(i,7),2)+3*_Parameters(85+36,0)*pow(_Training(i,1),3)+2*_Parameters(86+36,0)*pow(_Training(i,1),2)*_Training(i,2)+3*_Parameters(87+36,0)*_Training(i,1)*pow(_Training(i,2),2)+4*_Parameters(88+36,0)*pow(_Training(i,2),3)+3*_Parameters(90+36,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(91+36,0)*_Training(i,1)*_Training(i,3)+2*_Parameters(92+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(94+36,0)*_Training(i,1)*pow(_Training(i,3),2)+2*_Parameters(95+36,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(97+36,0)*pow(_Training(i,3),3)+_Parameters(136,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(138,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(139,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+3*_Parameters(141,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(142,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(143,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(146,0)*_Training(i,1)*pow(_Training(i,4),2)+2*_Parameters(148,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(149,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(152,0)*pow(_Training(i,4),3)+_Parameters(156,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(163,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(159,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(160,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(166,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(167,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(168,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+3*_Parameters(165,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(169,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(170,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(178,0)*_Training(i,1)*pow(_Training(i,5),2)+2*_Parameters(179,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(180,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(181,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(186,0)*pow(_Training(i,5),3)+_Parameters(191,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(201,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(195,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(196,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(197,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(206,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(207,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(208,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(209,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(210,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(211,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+3*_Parameters(205,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(206,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(213,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(214,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(226,0)*_Training(i,1)*pow(_Training(i,6),2)+2*_Parameters(230,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(231,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(232,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(233,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(240,0)*pow(_Training(i,6),3)+_Parameters(247,0)*pow(_Training(i,1),2)*_Training(i,7)+2*_Parameters(262,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+_Parameters(252,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+_Parameters(253,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+_Parameters(254,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+_Parameters(255,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+2*_Parameters(268,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+2*_Parameters(269,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+2*_Parameters(270,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+2*_Parameters(271,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+_Parameters(272,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+_Parameters(273,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+_Parameters(274,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+_Parameters(275,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+_Parameters(276,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+_Parameters(277,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+3*_Parameters(267,0)*pow(_Training(i,2),2)*_Training(i,7)+_Parameters(278,0)*pow(_Training(i,3),2)*_Training(i,7)+_Parameters(279,0)*pow(_Training(i,4),2)*_Training(i,7)+_Parameters(280,0)*pow(_Training(i,5),2)*_Training(i,7)+_Parameters(281,0)*pow(_Training(i,6),2)*_Training(i,7)+_Parameters(303,0)*_Training(i,1)*pow(_Training(i,7),2)+2*_Parameters(308,0)*_Training(i,2)*pow(_Training(i,7),2)+_Parameters(309,0)*_Training(i,3)*pow(_Training(i,7),2)+_Parameters(310,0)*_Training(i,4)*pow(_Training(i,7),2)+_Parameters(311,0)*_Training(i,5)*pow(_Training(i,7),2)+_Parameters(312,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(324,0)*pow(_Training(i,7),3);
-
-                        
-                        _Jacobian(6,2) = _Parameters(3,0)+2*_Parameters(13,0)*_Training(i,3)+_Parameters(12,0)*_Training(i,2)+_Parameters(11,0)*_Training(i,1)+_Parameters(16,0)*_Training(i,4)+_Parameters(20,0)*_Training(i,5)+_Parameters(25,0)*_Training(i,6)+_Parameters(31,0)*_Training(i,7)+3*_Parameters(45,0)*pow(_Training(i,3),2)+2*_Parameters(44,0)*_Training(i,3)*_Training(i,2)+_Parameters(41,0)*pow(_Training(i,2),2)+2*_Parameters(43,0)*_Training(i,1)*_Training(i,3)+_Parameters(42,0)*_Training(i,1)*_Training(i,2)+_Parameters(40,0)*pow(_Training(i,1),2)+2*_Parameters(48,0)*_Training(i,3)*_Training(i,4)+_Parameters(50,0)*_Training(i,1)*_Training(i,4)+_Parameters(51,0)*_Training(i,2)*_Training(i,4)+_Parameters(54,0)*pow(_Training(i,4),2)+2*_Parameters(58,0)*_Training(i,3)*_Training(i,5)+_Parameters(61,0)*_Training(i,1)*_Training(i,5)+_Parameters(63,0)*_Training(i,2)*_Training(i,5)+_Parameters(65,0)*_Training(i,4)*_Training(i,5)+_Parameters(68,0)*pow(_Training(i,5),2)+2*_Parameters(73,0)*_Training(i,3)*_Training(i,6)+_Parameters(77,0)*_Training(i,1)*_Training(i,6)+_Parameters(80,0)*_Training(i,2)*_Training(i,6)+_Parameters(83,0)*_Training(i,4)*_Training(i,6)+_Parameters(84,0)*_Training(i,5)*_Training(i,6)+_Parameters(88,0)*pow(_Training(i,6),2)+2*_Parameters(94,0)*_Training(i,3)*_Training(i,7)+_Parameters(99,0)*_Training(i,1)*_Training(i,7)+_Parameters(103,0)*_Training(i,2)*_Training(i,7)+_Parameters(107,0)*_Training(i,4)*_Training(i,7)+_Parameters(108,0)*_Training(i,5)*_Training(i,7)+_Parameters(109,0)*_Training(i,6)*_Training(i,7)+_Parameters(115,0)*pow(_Training(i,7),2)+_Parameters(89+36,0)*pow(_Training(i,1),3)+_Parameters(90+36,0)*pow(_Training(i,2),3)+_Parameters(91+36,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(92+36,0)*_Training(i,1)*pow(_Training(i,2),2)+2*_Parameters(93+36,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(94+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+2*_Parameters(95+36,0)*pow(_Training(i,2),2)*_Training(i,3)+3*_Parameters(96+36,0)*_Training(i,1)*pow(_Training(i,3),2)+3*_Parameters(97+36,0)*_Training(i,2)*pow(_Training(i,3),2)+4*_Parameters(98+36,0)*pow(_Training(i,3),3)+_Parameters(101+36,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(103+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(104+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(106+36,0)*pow(_Training(i,2),2)*_Training(i,4)+2*_Parameters(107+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+3*_Parameters(108+36,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(111+36,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(113+36,0)*_Training(i,2)*pow(_Training(i,4),2)+2*_Parameters(114+36,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(117,0)*pow(_Training(i,4),3)+_Parameters(121,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(123+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(127+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(125+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(133+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(132+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(136+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(130+36,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(135+36,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(137+36,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(141+36,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(144+36,0)*_Training(i,2)*pow(_Training(i,5),2)+2*_Parameters(146+36,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(147+36,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(186,0)*pow(_Training(i,5),3)+_Parameters(156+36,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(159+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(166+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(162+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(163+36,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(176+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(173+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(174,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(180,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(181+36,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(182+36,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(170+36,0)*pow(_Training(i,2),2)*_Training(i,6)+3*_Parameters(179+36,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(183+36,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(184+36,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(191+36,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(195+36,0)*_Training(i,2)*pow(_Training(i,6),2)+2*_Parameters(198+36,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(200+36,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(201+36,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(207+36,0)*pow(_Training(i,6),3)+_Parameters(248,0)*pow(_Training(i,1),2)*_Training(i,7)+_Parameters(252,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+2*_Parameters(263,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+_Parameters(256,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+_Parameters(257,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+_Parameters(258,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+2*_Parameters(278,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+_Parameters(272,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+_Parameters(273,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+_Parameters(274,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+2*_Parameters(283,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+2*_Parameters(284,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+2*_Parameters(285,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+_Parameters(286,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+_Parameters(287,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+_Parameters(288,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+_Parameters(268,0)*pow(_Training(i,2),2)*_Training(i,7)+3*_Parameters(282,0)*pow(_Training(i,3),2)*_Training(i,7)+_Parameters(289,0)*pow(_Training(i,4),2)*_Training(i,7)+_Parameters(290,0)*pow(_Training(i,5),2)*_Training(i,7)+_Parameters(291,0)*pow(_Training(i,6),2)*_Training(i,7)+_Parameters(304,0)*_Training(i,1)*pow(_Training(i,7),2)+_Parameters(309,0)*_Training(i,2)*pow(_Training(i,7),2)+2*_Parameters(313,0)*_Training(i,3)*pow(_Training(i,7),2)+_Parameters(314,0)*_Training(i,4)*pow(_Training(i,7),2)+_Parameters(315,0)*_Training(i,5)*pow(_Training(i,7),2)+_Parameters(316,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(325,0)*pow(_Training(i,7),3);
-
-                        _Jacobian(6,3) = _Parameters(4,0)+_Parameters(14,0)*_Training(i,1)+_Parameters(15,0)*_Training(i,2)+_Parameters(16,0)*_Training(i,3)+2*_Parameters(17,0)*_Training(i,4)+_Parameters(21,0)*_Training(i,5)+_Parameters(26,0)*_Training(i,6)+_Parameters(32,0)*_Training(i,7)+_Parameters(46,0)*pow(_Training(i,1),2)+_Parameters(47,0)*pow(_Training(i,2),2)+_Parameters(48,0)*pow(_Training(i,3),2)+_Parameters(49,0)*_Training(i,1)*_Training(i,2)+_Parameters(50,0)*_Training(i,1)*_Training(i,3)+_Parameters(51,0)*_Training(i,2)*_Training(i,3)+2*_Parameters(52,0)*_Training(i,1)*_Training(i,4)+2*_Parameters(53,0)*_Training(i,2)*_Training(i,4)+2*_Parameters(53,0)*_Training(i,3)*_Training(i,4)+3*_Parameters(55,0)*pow(_Training(i,4),2)+2*_Parameters(59,0)*_Training(i,4)*_Training(i,5)+_Parameters(62,0)*_Training(i,1)*_Training(i,5)+_Parameters(64,0)*_Training(i,2)*_Training(i,5)+_Parameters(65,0)*_Training(i,3)*_Training(i,5)+_Parameters(69,0)*pow(_Training(i,5),2)+2*_Parameters(74,0)*_Training(i,4)*_Training(i,6)+_Parameters(78,0)*_Training(i,1)*_Training(i,6)+_Parameters(81,0)*_Training(i,2)*_Training(i,6)+_Parameters(83,0)*_Training(i,3)*_Training(i,6)+_Parameters(85,0)*_Training(i,5)*_Training(i,6)+_Parameters(89,0)*pow(_Training(i,6),2)+2*_Parameters(95,0)*_Training(i,1)*_Training(i,7)+_Parameters(100,0)*_Training(i,1)*_Training(i,7)+_Parameters(104,0)*_Training(i,2)*_Training(i,7)+_Parameters(107,0)*_Training(i,3)*_Training(i,7)+_Parameters(110,0)*_Training(i,5)*_Training(i,7)+_Parameters(111,0)*_Training(i,6)*_Training(i,7)+_Parameters(116,0)*pow(_Training(i,7),2)+_Parameters(99+36,0)*pow(_Training(i,1),3)+_Parameters(100+36,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(101+36,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(102+36,0)*pow(_Training(i,2),2)*_Training(i,1)+_Parameters(103+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(104+36,0)*pow(_Training(i,3),2)*_Training(i,1)+_Parameters(105+36,0)*pow(_Training(i,3),3)+_Parameters(106+36,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(107+36,0)*pow(_Training(i,3),2)*_Training(i,2)+_Parameters(108+36,0)*pow(_Training(i,3),3)+2*_Parameters(109+36,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(110+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+2*_Parameters(111+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(112+36,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(113+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+2*_Parameters(114+36,0)*pow(_Training(i,3),2)*_Training(i,4)+3*_Parameters(115+36,0)*pow(_Training(i,4),2)*_Training(i,1)+3*_Parameters(116+36,0)*pow(_Training(i,4),2)*_Training(i,2)+3*_Parameters(117+36,0)*pow(_Training(i,4),2)*_Training(i,3)+4*_Parameters(118+36,0)*pow(_Training(i,4),3)+_Parameters(122+36,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(124+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(125+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(128+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(132+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(134+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(137+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(131+36,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(136+36,0)*pow(_Training(i,3),2)*_Training(i,5)+3*_Parameters(138+36,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(142+36,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(145+36,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(147+36,0)*_Training(i,3)*pow(_Training(i,5),2)+2*_Parameters(148+36,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(152+36,0)*pow(_Training(i,5),3)+_Parameters(156+36,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(160+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(162+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(167+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(164+36,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(173+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(177+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(175+36,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(183+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(182+36,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(186+36,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(172+36,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(180+36,0)*pow(_Training(i,3),2)*_Training(i,6)+3*_Parameters(185+36,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(188+36,0)*pow(_Training(i,5),2)*_Training(i,6)+2*_Parameters(192+36,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(196+36,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(199+36,0)*_Training(i,3)*pow(_Training(i,6),2)+2*_Parameters(201+36,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(202+36,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(207+36,0)*pow(_Training(i,6),3)+_Parameters(249,0)*pow(_Training(i,1),2)*_Training(i,7)+_Parameters(253,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+_Parameters(256,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+2*_Parameters(264,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+_Parameters(259,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+_Parameters(260,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+_Parameters(272,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+2*_Parameters(279,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+_Parameters(275,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+_Parameters(276,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+2*_Parameters(289,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+_Parameters(286,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+_Parameters(287,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+2*_Parameters(293,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+2*_Parameters(294,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+_Parameters(295,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+_Parameters(269,0)*pow(_Training(i,2),2)*_Training(i,7)+_Parameters(283,0)*pow(_Training(i,3),2)*_Training(i,7)+3*_Parameters(292,0)*pow(_Training(i,4),2)*_Training(i,7)+_Parameters(296,0)*pow(_Training(i,5),2)*_Training(i,7)+_Parameters(297,0)*pow(_Training(i,6),2)*_Training(i,7)+_Parameters(305,0)*_Training(i,1)*pow(_Training(i,7),2)+_Parameters(310,0)*_Training(i,2)*pow(_Training(i,7),2)+_Parameters(314,0)*_Training(i,3)*pow(_Training(i,7),2)+2*_Parameters(317,0)*_Training(i,4)*pow(_Training(i,7),2)+_Parameters(318,0)*_Training(i,5)*pow(_Training(i,7),2)+_Parameters(319,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(326,0)*pow(_Training(i,7),3);
-                        
-                        _Jacobian(6,4) = _Parameters(5,0)+_Parameters(18,0)*_Training(i,1)+_Parameters(19,0)*_Training(i,2)+_Parameters(20,0)*_Training(i,3)+_Parameters(21,0)*_Training(i,4)+2*_Parameters(22,0)*_Training(i,5)+_Parameters(27,0)*_Training(i,6)+_Parameters(33,0)*_Training(i,7)+_Parameters(56,0)*pow(_Training(i,1),2)+_Parameters(57,0)*pow(_Training(i,2),2)+_Parameters(58,0)*pow(_Training(i,3),2)+_Parameters(59,0)*pow(_Training(i,4),2)+_Parameters(60,0)*_Training(i,1)*_Training(i,2)+_Parameters(61,0)*_Training(i,1)*_Training(i,3)+_Parameters(62,0)*_Training(i,1)*_Training(i,4)+_Parameters(63,0)*_Training(i,2)*_Training(i,3)+_Parameters(64,0)*_Training(i,2)*_Training(i,4)+_Parameters(65,0)*_Training(i,3)*_Training(i,4)+2*_Parameters(66,0)*_Training(i,1)*_Training(i,5)+2*_Parameters(67,0)*_Training(i,2)*_Training(i,5)+2*_Parameters(68,0)*_Training(i,3)*_Training(i,5)+2*_Parameters(69,0)*_Training(i,4)*_Training(i,5)+3*_Parameters(70,0)*pow(_Training(i,5),2)+2*_Parameters(75,0)*_Training(i,5)*_Training(i,6)+_Parameters(79,0)*_Training(i,1)*_Training(i,6)+_Parameters(82,0)*_Training(i,2)*_Training(i,6)+_Parameters(84,0)*_Training(i,3)*_Training(i,6)+_Parameters(85,0)*_Training(i,4)*_Training(i,6)+_Parameters(90,0)*pow(_Training(i,6),2)+2*_Parameters(96,0)*_Training(i,5)*_Training(i,7)+_Parameters(101,0)*_Training(i,1)*_Training(i,7)+_Parameters(105,0)*_Training(i,2)*_Training(i,7)+_Parameters(108,0)*_Training(i,3)*_Training(i,7)+_Parameters(110,0)*_Training(i,4)*_Training(i,7)+_Parameters(112,0)*_Training(i,6)*_Training(i,7)+_Parameters(117,0)*pow(_Training(i,7),2)+_Parameters(119+36,0)*pow(_Training(i,1),3)+_Parameters(120+36,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(126+36,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(131+36,0)*pow(_Training(i,2),3)+_Parameters(121+36,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(123+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(130+36,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(127+36,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(133+36,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(135+36,0)*pow(_Training(i,3),3)+_Parameters(122+36,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(124+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(125+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(131+36,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(132+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(136+36,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(100+36,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(106+36,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(137+36,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(138+36,0)*pow(_Training(i,4),3)+2*_Parameters(139+36,0)*pow(_Training(i,1),2)*_Training(i,5)+2*_Parameters(140+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+2*_Parameters(141+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(142+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+2*_Parameters(144+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+2*_Parameters(145+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+2*_Parameters(147+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+2*_Parameters(143+36,0)*pow(_Training(i,2),2)*_Training(i,5)+2*_Parameters(146+36,0)*pow(_Training(i,3),2)*_Training(i,5)+2*_Parameters(148+36,0)*pow(_Training(i,4),2)*_Training(i,5)+3*_Parameters(149+36,0)*_Training(i,1)*pow(_Training(i,5),2)+3*_Parameters(150+36,0)*_Training(i,2)*pow(_Training(i,5),2)+3*_Parameters(151+36,0)*_Training(i,3)*pow(_Training(i,5),2)+3*_Parameters(152+36,0)*_Training(i,4)*pow(_Training(i,5),2)+4*_Parameters(153+36,0)*pow(_Training(i,5),3)+_Parameters(158+36,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(161+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(163+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(164+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(168+36,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(174+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(175+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(178+36,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(182+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(184+36,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(187+36,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(172+36,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(181+36,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(186+36,0)*pow(_Training(i,4),2)*_Training(i,6)+2*_Parameters(188+36,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(193+36,0)*_Training(i,1)*pow(_Training(i,6),2)+_Parameters(197+36,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(200+36,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(202+36,0)*_Training(i,4)*pow(_Training(i,6),2)+2*_Parameters(203+36,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(208+36,0)*pow(_Training(i,6),3)+_Parameters(250,0)*pow(_Training(i,1),2)*_Training(i,7)+_Parameters(254,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+_Parameters(257,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+_Parameters(259,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+2*_Parameters(265,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+_Parameters(261,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+_Parameters(273,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+_Parameters(275,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+2*_Parameters(280,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+_Parameters(277,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+_Parameters(286,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+2*_Parameters(290,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+_Parameters(288,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+2*_Parameters(296,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+_Parameters(295,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+2*_Parameters(298,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+_Parameters(270,0)*pow(_Training(i,2),2)*_Training(i,7)+_Parameters(284,0)*pow(_Training(i,3),2)*_Training(i,7)+_Parameters(293,0)*pow(_Training(i,4),2)*_Training(i,7)+3*_Parameters(298,0)*pow(_Training(i,5),2)*_Training(i,7)+_Parameters(300,0)*pow(_Training(i,6),2)*_Training(i,7)+_Parameters(306,0)*_Training(i,1)*pow(_Training(i,7),2)+_Parameters(311,0)*_Training(i,2)*pow(_Training(i,7),2)+_Parameters(315,0)*_Training(i,3)*pow(_Training(i,7),2)+_Parameters(318,0)*_Training(i,4)*pow(_Training(i,7),2)+2*_Parameters(320,0)*_Training(i,5)*pow(_Training(i,7),2)+_Parameters(321,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(327,0)*pow(_Training(i,7),3);
-
-                        _Jacobian(6,5) = _Parameters(6,0)+_Parameters(23,0)*_Training(i,1)+_Parameters(24,0)*_Training(i,2)+_Parameters(25,0)*_Training(i,3)+_Parameters(26,0)*_Training(i,4)+_Parameters(27,0)*_Training(i,5)+2*_Parameters(28,0)*_Training(i,6)+_Parameters(34,0)*_Training(i,7)+_Parameters(71,0)*pow(_Training(i,1),2)+_Parameters(72,0)*pow(_Training(i,2),2)+_Parameters(73,0)*pow(_Training(i,3),2)+_Parameters(74,0)*pow(_Training(i,4),2)+_Parameters(75,0)*pow(_Training(i,5),2)+_Parameters(76,0)*_Training(i,1)*_Training(i,2)+_Parameters(77,0)*_Training(i,1)*_Training(i,3)+_Parameters(78,0)*_Training(i,1)*_Training(i,4)+_Parameters(79,0)*_Training(i,1)*_Training(i,5)+_Parameters(80,0)*_Training(i,2)*_Training(i,3)+_Parameters(81,0)*_Training(i,2)*_Training(i,4)+_Parameters(82,0)*_Training(i,2)*_Training(i,5)+_Parameters(83,0)*_Training(i,3)*_Training(i,4)+_Parameters(84,0)*_Training(i,3)*_Training(i,5)+_Parameters(85,0)*_Training(i,4)*_Training(i,5)+2*_Parameters(86,0)*_Training(i,1)*_Training(i,6)+2*_Parameters(87,0)*_Training(i,2)*_Training(i,6)+2*_Parameters(88,0)*_Training(i,3)*_Training(i,6)+2*_Parameters(89,0)*_Training(i,4)*_Training(i,6)+2*_Parameters(90,0)*_Training(i,5)*_Training(i,6)+3*_Parameters(91,0)*pow(_Training(i,6),2)+2*_Parameters(97,0)*_Training(i,6)*_Training(i,7)+_Parameters(102,0)*_Training(i,1)*_Training(i,7)+_Parameters(106,0)*_Training(i,2)*_Training(i,7)+_Parameters(109,0)*_Training(i,3)*_Training(i,7)+_Parameters(111,0)*_Training(i,4)*_Training(i,7)+_Parameters(112,0)*_Training(i,5)*_Training(i,7)+_Parameters(118,0)*pow(_Training(i,7),2)+_Parameters(154+36,0)*pow(_Training(i,1),3)+_Parameters(155+36,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(165+36,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(169+36,0)*pow(_Training(i,2),3)+_Parameters(156+36,0)*pow(_Training(i,1),2)*_Training(i,3)+2*_Parameters(159+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(170+36,0)*pow(_Training(i,2),2)*_Training(i,3)+2*_Parameters(166+36,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(176+36,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(179+36,0)*pow(_Training(i,3),3)+3*_Parameters(157+36,0)*pow(_Training(i,1),2)*_Training(i,4)+2*_Parameters(160+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(162+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(171+36,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(173+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(180+36,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(167+36,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(177+36,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(183+36,0)*_Training(i,3)*pow(_Training(i,4),2)+_Parameters(185+36,0)*pow(_Training(i,4),3)+3*_Parameters(158+36,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(161+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(163+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+2*_Parameters(164+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(174+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(175+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(182+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(172+36,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(181+36,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(186+36,0)*pow(_Training(i,4),2)*_Training(i,5)+2*_Parameters(168+36,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(178+36,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(184+36,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(187+36,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(188+36,0)*pow(_Training(i,5),3)+2*_Parameters(189+36,0)*pow(_Training(i,1),2)*_Training(i,6)+2*_Parameters(190+36,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+2*_Parameters(191+36,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+2*_Parameters(192+36,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+2*_Parameters(193+36,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+2*_Parameters(195+36,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+2*_Parameters(196+36,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+2*_Parameters(197+36,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+2*_Parameters(199+36,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+2*_Parameters(200+36,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+2*_Parameters(202+36,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+2*_Parameters(195+36,0)*pow(_Training(i,2),2)*_Training(i,6)+2*_Parameters(198+36,0)*pow(_Training(i,3),2)*_Training(i,6)+2*_Parameters(196+36,0)*pow(_Training(i,4),2)*_Training(i,6)+2*_Parameters(203+36,0)*pow(_Training(i,5),2)*_Training(i,6)+3*_Parameters(204+36,0)*_Training(i,1)*pow(_Training(i,6),2)+3*_Parameters(205+36,0)*_Training(i,2)*pow(_Training(i,6),2)+3*_Parameters(206+36,0)*_Training(i,3)*pow(_Training(i,6),2)+3*_Parameters(207+36,0)*_Training(i,4)*pow(_Training(i,6),2)+3*_Parameters(208+36,0)*_Training(i,5)*pow(_Training(i,6),2)+4*_Parameters(209+36,0)*pow(_Training(i,6),3)+_Parameters(251,0)*pow(_Training(i,1),2)*_Training(i,7)+_Parameters(255,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+_Parameters(258,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+_Parameters(260,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+_Parameters(261,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+2*_Parameters(266,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+_Parameters(274,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+_Parameters(276,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+_Parameters(277,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+2*_Parameters(281,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+_Parameters(287,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+_Parameters(288,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+_Parameters(291,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+_Parameters(295,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+2*_Parameters(297,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+2*_Parameters(300,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+_Parameters(271,0)*pow(_Training(i,2),2)*_Training(i,7)+_Parameters(285,0)*pow(_Training(i,3),2)*_Training(i,7)+_Parameters(294,0)*pow(_Training(i,4),2)*_Training(i,7)+_Parameters(299,0)*pow(_Training(i,5),2)*_Training(i,7)+3*_Parameters(301,0)*pow(_Training(i,6),2)*_Training(i,7)+_Parameters(307,0)*_Training(i,1)*pow(_Training(i,7),2)+_Parameters(312,0)*_Training(i,2)*pow(_Training(i,7),2)+_Parameters(316,0)*_Training(i,3)*pow(_Training(i,7),2)+_Parameters(319,0)*_Training(i,4)*pow(_Training(i,7),2)+_Parameters(321,0)*_Training(i,5)*pow(_Training(i,7),2)+2*_Parameters(322,0)*_Training(i,6)*pow(_Training(i,7),2)+_Parameters(328,0)*pow(_Training(i,7),3);
-                        
-                        _Jacobian(6,6) = _Parameters(7,0)+_Parameters(29,0)*_Training(i,1)+_Parameters(30,0)*_Training(i,2)+_Parameters(31,0)*_Training(i,3)+_Parameters(32,0)*_Training(i,4)+_Parameters(33,0)*_Training(i,5)+_Parameters(34,0)*_Training(i,6)+2*_Parameters(35,0)*_Training(i,7)+_Parameters(92,0)*pow(_Training(i,1),2)+_Parameters(93,0)*pow(_Training(i,2),2)+_Parameters(94,0)*pow(_Training(i,3),2)+_Parameters(95,0)*pow(_Training(i,4),2)+_Parameters(96,0)*pow(_Training(i,5),2)+_Parameters(97,0)*pow(_Training(i,6),2)+_Parameters(98,0)*_Training(i,1)*_Training(i,2)+_Parameters(99,0)*_Training(i,1)*_Training(i,3)+_Parameters(100,0)*_Training(i,1)*_Training(i,4)+_Parameters(101,0)*_Training(i,1)*_Training(i,5)+_Parameters(102,0)*_Training(i,1)*_Training(i,6)+_Parameters(103,0)*_Training(i,2)*_Training(i,3)+_Parameters(104,0)*_Training(i,2)*_Training(i,4)+_Parameters(105,0)*_Training(i,2)*_Training(i,5)+_Parameters(106,0)*_Training(i,2)*_Training(i,6)+_Parameters(107,0)*_Training(i,3)*_Training(i,4)+_Parameters(108,0)*_Training(i,3)*_Training(i,5)+_Parameters(109,0)*_Training(i,3)*_Training(i,6)+_Parameters(110,0)*_Training(i,4)*_Training(i,5)+_Parameters(111,0)*_Training(i,4)*_Training(i,6)+_Parameters(112,0)*_Training(i,5)*_Training(i,6)+2*_Parameters(113,0)*_Training(i,1)*_Training(i,7)+2*_Parameters(114,0)*_Training(i,2)*_Training(i,7)+2*_Parameters(115,0)*_Training(i,3)*_Training(i,7)+2*_Parameters(116,0)*_Training(i,4)*_Training(i,7)+2*_Parameters(117,0)*_Training(i,5)*_Training(i,7)+2*_Parameters(118,0)*_Training(i,6)*_Training(i,7)+3*_Parameters(119,0)*pow(_Training(i,7),2)+_Parameters(246,0)*pow(_Training(i,1),3)+_Parameters(247,0)*pow(_Training(i,1),2)*_Training(i,2)+_Parameters(248,0)*pow(_Training(i,1),2)*_Training(i,3)+_Parameters(249,0)*pow(_Training(i,1),2)*_Training(i,4)+_Parameters(250,0)*pow(_Training(i,1),2)*_Training(i,5)+_Parameters(251,0)*pow(_Training(i,1),2)*_Training(i,6)+_Parameters(252,0)*_Training(i,1)*_Training(i,2)*_Training(i,3)+_Parameters(253,0)*_Training(i,1)*_Training(i,2)*_Training(i,4)+_Parameters(254,0)*_Training(i,1)*_Training(i,2)*_Training(i,5)+_Parameters(255,0)*_Training(i,1)*_Training(i,2)*_Training(i,6)+_Parameters(256,0)*_Training(i,1)*_Training(i,3)*_Training(i,4)+_Parameters(257,0)*_Training(i,1)*_Training(i,3)*_Training(i,5)+_Parameters(258,0)*_Training(i,1)*_Training(i,3)*_Training(i,6)+_Parameters(259,0)*_Training(i,1)*_Training(i,4)*_Training(i,5)+_Parameters(260,0)*_Training(i,1)*_Training(i,4)*_Training(i,6)+_Parameters(261,0)*_Training(i,1)*_Training(i,5)*_Training(i,6)+_Parameters(262,0)*_Training(i,1)*pow(_Training(i,2),2)+_Parameters(263,0)*_Training(i,1)*pow(_Training(i,3),2)+_Parameters(264,0)*_Training(i,1)*pow(_Training(i,4),2)+_Parameters(265,0)*_Training(i,1)*pow(_Training(i,5),2)+_Parameters(266,0)*_Training(i,1)*pow(_Training(i,4),6)+_Parameters(267,0)*pow(_Training(i,2),3)+_Parameters(268,0)*pow(_Training(i,2),2)*_Training(i,3)+_Parameters(269,0)*pow(_Training(i,2),2)*_Training(i,4)+_Parameters(270,0)*pow(_Training(i,2),2)*_Training(i,5)+_Parameters(271,0)*pow(_Training(i,2),2)*_Training(i,6)+_Parameters(272,0)*_Training(i,2)*_Training(i,3)*_Training(i,4)+_Parameters(273,0)*_Training(i,2)*_Training(i,3)*_Training(i,5)+_Parameters(274,0)*_Training(i,2)*_Training(i,3)*_Training(i,6)+_Parameters(275,0)*_Training(i,2)*_Training(i,4)*_Training(i,5)+_Parameters(276,0)*_Training(i,2)*_Training(i,4)*_Training(i,6)+_Parameters(277,0)*_Training(i,2)*_Training(i,5)*_Training(i,6)+_Parameters(278,0)*_Training(i,2)*pow(_Training(i,3),2)+_Parameters(279,0)*_Training(i,2)*pow(_Training(i,4),2)+_Parameters(280,0)*_Training(i,2)*pow(_Training(i,5),2)+_Parameters(281,0)*_Training(i,2)*pow(_Training(i,6),2)+_Parameters(282,0)*pow(_Training(i,3),3)+_Parameters(283,0)*pow(_Training(i,3),2)*_Training(i,4)+_Parameters(284,0)*pow(_Training(i,3),2)*_Training(i,5)+_Parameters(285,0)*pow(_Training(i,3),2)*_Training(i,6)+_Parameters(286,0)*_Training(i,3)*_Training(i,4)*_Training(i,5)+_Parameters(287,0)*_Training(i,3)*_Training(i,4)*_Training(i,6)+_Parameters(288,0)*_Training(i,3)*_Training(i,5)*_Training(i,6)+_Parameters(289,0)*_Training(i,3)*pow(_Training(i,3),2)+_Parameters(290,0)*_Training(i,3)*pow(_Training(i,5),2)+_Parameters(291,0)*_Training(i,3)*pow(_Training(i,6),2)+_Parameters(292,0)*pow(_Training(i,4),3)+_Parameters(293,0)*pow(_Training(i,4),2)*_Training(i,5)+_Parameters(294,0)*pow(_Training(i,4),2)*_Training(i,6)+_Parameters(295,0)*_Training(i,4)*_Training(i,5)*_Training(i,6)+_Parameters(296,0)*_Training(i,4)*pow(_Training(i,5),2)+_Parameters(297,0)*_Training(i,4)*pow(_Training(i,6),2)+_Parameters(298,0)*pow(_Training(i,5),3)+_Parameters(299,0)*pow(_Training(i,5),2)*_Training(i,6)+_Parameters(300,0)*_Training(i,5)*pow(_Training(i,6),2)+_Parameters(301,0)*pow(_Training(i,6),3)+2*_Parameters(302,0)*pow(_Training(i,1),2)*_Training(i,7)+2*_Parameters(303,0)*_Training(i,1)*_Training(i,2)*_Training(i,7)+2*_Parameters(304,0)*_Training(i,1)*_Training(i,3)*_Training(i,7)+2*_Parameters(305,0)*_Training(i,1)*_Training(i,4)*_Training(i,7)+2*_Parameters(306,0)*_Training(i,1)*_Training(i,5)*_Training(i,7)+2*_Parameters(307,0)*_Training(i,1)*_Training(i,6)*_Training(i,7)+2*_Parameters(308,0)*pow(_Training(i,2),2)*_Training(i,7)+2*_Parameters(309,0)*_Training(i,2)*_Training(i,3)*_Training(i,7)+2*_Parameters(310,0)*_Training(i,2)*_Training(i,4)*_Training(i,7)+2*_Parameters(311,0)*_Training(i,2)*_Training(i,5)*_Training(i,7)+2*_Parameters(312,0)*_Training(i,2)*_Training(i,6)*_Training(i,7)+2*_Parameters(313,0)*pow(_Training(i,3),2)*_Training(i,7)+2*_Parameters(314,0)*_Training(i,3)*_Training(i,4)*_Training(i,7)+2*_Parameters(315,0)*_Training(i,3)*_Training(i,5)*_Training(i,7)+2*_Parameters(316,0)*_Training(i,3)*_Training(i,6)*_Training(i,7)+2*_Parameters(317,0)*pow(_Training(i,4),2)*_Training(i,7)+2*_Parameters(318,0)*_Training(i,4)*_Training(i,5)*_Training(i,7)+2*_Parameters(319,0)*_Training(i,4)*_Training(i,6)*_Training(i,7)+2*_Parameters(320,0)*pow(_Training(i,5),2)*_Training(i,7)+2*_Parameters(321,0)*_Training(i,5)*_Training(i,6)*_Training(i,7)+2*_Parameters(322,0)*pow(_Training(i,6),2)*_Training(i,7)+3*_Parameters(323,0)*_Training(i,1)*pow(_Training(i,7),2)+3*_Parameters(324,0)*_Training(i,2)*pow(_Training(i,7),2)+3*_Parameters(325,0)*_Training(i,3)*pow(_Training(i,7),2)+3*_Parameters(326,0)*_Training(i,4)*pow(_Training(i,7),2)+3*_Parameters(327,0)*_Training(i,5)*pow(_Training(i,7),2)+3*_Parameters(328,0)*_Training(i,6)*pow(_Training(i,7),2)+4*_Parameters(329,0)*pow(_Training(i,7),3);
-                        
-                        break;
-                    }
-                    break;
-                    
-            }
-            
-            label = QR_factorization(_Q , _R , _Jacobian);
-            
-            for (int k = 0 ; k < d ; k++)
-                _LEs(k) = (i * _LEs(k) + log(_R(k,k)))/(i+1);
-            
-            _LargestLyapunov(i) = _LEs(0);
-            
-        }
-        
-        double f = _LargestLyapunov(MatrixSize - MAX_ED - 2);
-        return f;
-    }
-    
-    
-    
-    // Estimating the Lyapunov exponent second approach.
-	template <typename Embedding, typename Lyapunov, typename EA>
-	double lyapunov_estimation(Embedding& d , Lyapunov& l, EA& ea) {
-        namespace bnu=boost::numeric::ublas;
-        // input data can be found here (defined in config file or command line):
-        
-        matrix_type _InputMatrix;
-        matrix_type _InitialMatrix;
-        vector_type_distance _EuclideanDistance;
-        _InputMatrix.resize(_IntegerInput.size() - d + 1, d);
-        _InitialMatrix.resize(_IntegerInput.size() - d + 1, d);
-        _EuclideanDistance.resize(_IntegerInput.size() - d + 1);
-        _EuclideanDistance(0) = std::numeric_limits<double>::max();
-        
-        for (int i = 0 ; i < d ; i++)
-        {
-            matrix_type ShiftedTemp(_IntegerInput.begin() + i, _IntegerInput.end() - d + i + 1 , 1);
-            matrix_type Temp(_IntegerInput.begin() , _IntegerInput.end() - d + 1 , 1 , _IntegerInput(i));
-            column(_InputMatrix, i) = column(ShiftedTemp , 0);
-            column(_InitialMatrix, i) = column(Temp , 0);
-        }
-        
-        
-        unsigned Index;
-        l = 0; //Largest LE
-        double MinDistance = std::numeric_limits<double>::max();
-        
-        
-        double EvolZero;
-        double EvolPrime;
-        
-        for (unsigned i = 0 ; i < _EuclideanDistance.size() - 1; i++)
-        {
-            
-            row_type InitialRow(_InitialMatrix, i);
-            
-            for (int j = 0 ; j < _EuclideanDistance.size() ; j++)
-            {
-                row_type InputRow(_InputMatrix, j);
-                _EuclideanDistance(j) = norm_2(InputRow - InitialRow);
-            }
-            
-            _EuclideanDistance(i) = MinDistance;
-            
-            Index = 0;
-            for (unsigned j = 0 ; j < _EuclideanDistance.size() ; j++)
-            {
-                if (_EuclideanDistance(j) < MinDistance)
-                {
-                    MinDistance = _EuclideanDistance(j);
-                    Index = j;
-                }
-            }
-            
-
-            
-            row_type EvolRowZero(_InputMatrix, i);
-            row_type EvolRowOne (_InputMatrix, Index);
-            
-            EvolZero = norm_2(EvolRowOne - EvolRowZero);
-            
-            
-            row_type EvolRowPrime    (_InputMatrix, i + 1);
-            row_type EvolRowPrimeOne (_InputMatrix, Index + 1);
-            
-            EvolPrime = norm_2(EvolRowPrimeOne - EvolRowPrime);
-            
-            l += log2(EvolPrime/EvolZero)/(_EuclideanDistance.size() - 1);
-
-        }
-        
-        return l;
-    }
-    
-    
-    
-    // Estimating the prediction horizon.
-	template <typename PredictionHorizon, typename Lyapunov, typename EA>
-	unsigned prediction_horizon_estimation(PredictionHorizon& h , Lyapunov& l, EA& ea) {
-        namespace bnu=boost::numeric::ublas;
-        // input data can be found here (defined in config file or command line):
-        h = unsigned(1.0 / l);
-        return h;
-    }
-    
-    
-    
-    //! Initialize this fitness function.
-    template <typename RNG, typename EA>
-    void initialize(RNG& rng, EA& ea) {
-        // this simply parses the geometry of the MKV network from the configuration
-        // file:
-        mkv::parse_desc(get<MKV_DESC>(ea), _desc);
-        
-        // input data can be found here (defined in config file or command line):
-        std::string filename=get<SUNSPOT_INPUT>(ea);
-        std::ifstream MyFile (filename.c_str());
-        
-        
-        std::string Line;
-        int MatrixSize=0;
-        
-        if (MyFile.is_open())
-        {
-            for (int i = 1; i <= 4; i++)
-            {
-                getline (MyFile,Line);
-            }
-            MyFile>>MatrixSize;
-        }
-        else
-        {
-            std::cerr<<"Sorry, this file cannot be read."<<std::endl;
-            return;
-        }
-        
-        const int NumberOfDigits = 9;
-        
-        // read in the historical data for sunspot numbers, and split it into:
+=======
+        const int ncol = 9; // fixed number of bits per ssn
 
         // _input: a matrix where each row vector i is assumed to be the complete
         // **binary input vector** to the MKV network at time i.
-        _input.resize(MatrixSize,NumberOfDigits); // dummy initializer; replace with real size and data
+        input.resize(nrow,ncol);
+>>>>>>> 2d55879d34291d42095ec9562117a3ac98d3d0cd
         
         // _observed: a vector where element i corresponds to the observed (real) sunspot
         // number corresponding to row i in _inputs.
-        _observed.resize(MatrixSize,NumberOfDigits); // dummy initializer; replace with real size and data
-        _IntegerObserved.resize(MatrixSize);
-        int TempSSN = 0;
-        
-        for (int i = 0; i < MatrixSize; i++)
-        {
-            MyFile >>TempSSN;
-            _IntegerObserved(i) = TempSSN;
-            std::bitset<NumberOfDigits> TempBinarySSN = ~std::bitset<NumberOfDigits>(_IntegerObserved(i));
-            
-            for (int j = 0; j < NumberOfDigits; j++)
-            {
-                _input(i,j)=TempBinarySSN[NumberOfDigits - j - 1];
+        observed.resize(nrow);
+
+        for(int i=0; i<nrow; ++i) {
+            int t0=0;
+            infile >> t0 >> observed(i);
+
+            std::bitset<ncol> t0b = ~std::bitset<ncol>(t0);
+            for(int j=0; j<ncol; ++j) {
+                input(i,j) = t0b[ncol - j - 1];
             }
-            
-            MyFile >>TempSSN;
-            _IntegerObserved(i) = TempSSN;
-            TempBinarySSN = ~std::bitset<NumberOfDigits>(_IntegerObserved(i));
-            
-            for (int j = 0; j < NumberOfDigits; j++)
-            {
-                _observed(i,j)=TempBinarySSN[NumberOfDigits - j - 1];
-            }
+
+            // logic above is a bit strange.  consider instead:
+            // std::bitset<ncol> ssn(t0);
+            // for(int j=0; j<ncol; ++j) {
+            //     _input(i,j) = ssn[j];
+            // }
         }
-        
-        
     }
     
-    //! Calculate fitness of ind.
-	template <typename Individual, typename RNG, typename EA>
-	double operator()(Individual& ind, RNG& rng, EA& ea) {
+    /*! Test an individual for multiple predictions.
+     
+     Here the output of the Markov network is interpreted for each of n time steps.
+     */
+    template <typename Individual, typename RNG, typename EA>
+	dvector_type eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
         namespace bnu=boost::numeric::ublas;
-        mkv::markov_network net = mkv::make_markov_network(_desc, ind.repr().begin(), ind.repr().end(), rng, ea);
-
-        // vector of outputs from the MKV network, initialized to the same size
-        // as R:
-        vector_type output(_observed.size1());
+        mkv::markov_network net = mkv::make_markov_network(_desc, ind.repr().begin(), ind.repr().end(), rng.seed(), ea);
+        
+        // outputs from the MKV network, initialized to the same size as the number
+        // of observations by the fixed prediction horizon of 8 time steps.
+        std::size_t ph=get<SUNSPOT_PREDICTION_HORIZON>(ea);
+        output.resize(input.size1(), ph);
+        
+        bool first=true;
         
         // run each row of _inputs through the MKV network for a single update,
-        // place the result in the output vector:
-        for(std::size_t i=0; i<_input.size1(); ++i) {
+        // place the results in the output matrix:
+        for(std::size_t i=0; i<input.size1(); ++i) {
+            if(recurse) {
+                std::vector<int> v;
+                if(first) {
+                    row_type r(input,i);
+                    std::copy(r.begin(), r.end(), std::back_inserter(v));
+                    first = false;
+                } else {
+                    algorithm::range_pair2int(net.begin_output(),
+                                              net.begin_output()+2*input.size2(),
+                                              std::back_inserter(v));
+                }
+                mkv::update(net, 1, v.begin());
+            } else {
+                row_type r(input,i);
+                mkv::update(net, 1, r.begin());
+            }
             
-            row_type r(_input,i);
-            
-            mkv::update(net, 1, r.begin());
-            // convert the binary output from the MKV network to an integer;
-            // this uses the +/- encoding that has been shown to be effective with
-            // MKV networks:
-            output(i) = static_cast<double>(algorithm::range_pair2int(net.begin_output(), net.end_output()));
+            for(std::size_t j=0; j<ph; ++j) {
+                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*input.size2(),
+                                                        net.begin_output()+(j+1)*2*input.size2());
+            }
         }
+        
+        // fitness == 1.0/(1.0 + sum_{i=1}^{prediction horizon} RMSE_i)
+        dvector_type rmse(get<SUNSPOT_PREDICTION_HORIZON>(ea));
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            column_type c(output,i);
+            assert(c.size() == observed.size());
+            
+            // given:
+            // input | observed | output (predictions)
+            //                  | ph0 ph1 ph2 ph3...
+            // -------------------------------------
+            // i0    | i1       | o1,1 o1,2 o1,3 o1,4
+            // i1    | i2       | o2,1 o2,2 o2,3 o2,4
+            // i2    | i3       | o3,1 o3,2 o3,3 o3,4
+            //
+            // we need to match the columns of the output matrix with the
+            // appropriate range in the "observed" column, e.g.:
+            //
+            // err += observed(i1,i2,i3...) - output(o1,1, o2,1, o3,1...)
+            // err += observed(i2,i3,i4...) - output(o1,2, o2,2, o3,2...)
+            //
+            // note that as i increases, we're dropping elements off the front
+            // of the observed, and the back of the output matrix.
+            vector_type err =
+            bnu::vector_range<vector_type>(observed, bnu::range(i,observed.size()))
+            - bnu::vector_range<column_type>(c, bnu::range(0,c.size()-i));
+            
+            rmse(i) = sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
+        }
+
+        return rmse;
+    };
     
-        // fitness is 1.0/(1.0+sqrt((observed-output)^2)) -- RMSE:
-        bnu::vector<int> err = _IntegerObserved - output;
-        double f = 100.0/(1.0+sqrt(1.0/static_cast<double>(err.size()) * bnu::inner_prod(err,err)));
-        return f;
+    template <typename Individual, typename RNG, typename EA>
+    dvector_type train(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
+        return eval(ind, output, _train_input, _train_observed, rng, ea);
+    }
+
+    template <typename Individual, typename RNG, typename EA>
+    dvector_type test(Individual& ind, matrix_type& output, RNG& rng, EA& ea, bool recurse=false) {
+        return eval(ind, output, _test_input, _test_observed, rng, ea, recurse);
+    }
+
+    //! Calculate fitness of an individual.
+    template <typename Individual, typename RNG, typename EA>
+    double operator()(Individual& ind, RNG& rng, EA& ea) {
+        namespace bnu=boost::numeric::ublas;
+        typedef bnu::vector<int> int_vector_type;
+        matrix_type output;
+        vector_type rmse = train(ind, output, rng, ea);
+        
+        return 100.0 / (1.0 + std::accumulate(rmse.begin(), rmse.end(), 0.0));
     }
 };
+
+template <typename EA>
+struct sunspot_detail : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_detail";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
         
+        datafile df("sunspot_detail.dat");
+        df.add_field("observed");
         
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        ea.fitness_function().train(ind, output, ea.rng(), ea);
+        
+        for(std::size_t i=0; i<output.size1(); ++i) {
+            df.write(ea.fitness_function()._train_observed(i));
+            
+            for(std::size_t j=0; j<output.size2(); ++j) {
+                df.write(output(i,j));
+            }
+
+            df.endl();
+        }
+    }
+};
+
+template <typename EA>
+struct sunspot_test : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_test";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_test.dat");
+        df.add_field("observed");
+        
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        ea.fitness_function().test(ind, output, ea.rng(), ea);
+        
+        for(std::size_t i=0; i<output.size1(); ++i) {
+            df.write(ea.fitness_function()._test_observed(i));
+            
+            for(std::size_t j=0; j<output.size2(); ++j) {
+                df.write(output(i,j));
+            }
+            
+            df.endl();
+        }
+    }
+};
+
+template <typename EA>
+struct sunspot_test_rmse : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_test_rmse";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_test_rmse.dat");
+        df.add_field("total_rmse");
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        sunspot_fitness::dvector_type rmse = ea.fitness_function().test(ind, output, ea.rng(), ea);
+        
+        df.write(std::accumulate(rmse.begin(),rmse.end(),0.0)).write_all(rmse.begin(), rmse.end()).endl();
+    }
+};
+
+template <typename EA>
+struct sunspot_recursive_test : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_recursive_test";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        typename EA::individual_type& ind = analysis::find_dominant(ea);
+        
+        datafile df("sunspot_recursive_test.dat");
+        df.add_field("observed");
+        
+        for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
+            df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
+        }
+        
+        sunspot_fitness::matrix_type output;
+        ea.fitness_function().test(ind, output, ea.rng(), ea, true);
+        
+        for(std::size_t i=0; i<output.size1(); ++i) {
+            df.write(ea.fitness_function()._test_observed(i));
+            
+            for(std::size_t j=0; j<output.size2(); ++j) {
+                df.write(output(i,j));
+            }
+            
+            df.endl();
+        }
+    }
+};
+
 #endif

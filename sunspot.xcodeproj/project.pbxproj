@@ -69,6 +69,7 @@
 		42706B11166AF51C003FB2E3 /* sunspot.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = sunspot.xcconfig; sourceTree = "<group>"; };
 		4281FF0316C4929F0066610C /* ealib.cfg */ = {isa = PBXFileReference; lastKnownFileType = text; path = ealib.cfg; sourceTree = "<group>"; };
 		42B7A9B616305C4B00BDBA8A /* libz.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.dylib; path = usr/lib/libz.dylib; sourceTree = SDKROOT; };
+		42C550FE1760D01600C74564 /* prediction_horizon.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = prediction_horizon.h; sourceTree = "<group>"; };
 		42C772F816F73BE300EAFD8F /* sunspot_data.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sunspot_data.cpp; sourceTree = "<group>"; };
 		42C772F916F73BE300EAFD8F /* SunSpotNumber.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SunSpotNumber.cpp; sourceTree = "<group>"; };
 		42C772FA16F73BE300EAFD8F /* SunSpotNumber.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SunSpotNumber.h; sourceTree = "<group>"; };
@@ -136,6 +137,7 @@
 				42C772FA16F73BE300EAFD8F /* SunSpotNumber.h */,
 				424E4D6616BC27DE00716FFD /* sunspot.cpp */,
 				424E4D6716BC27DE00716FFD /* sunspot.h */,
+				42C550FE1760D01600C74564 /* prediction_horizon.h */,
 			);
 			path = src;
 			sourceTree = "<group>";

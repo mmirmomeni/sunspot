@@ -19,3 +19,6 @@ DerivedData
 build
 dist
 *.plist
+*.swp
+.Rhistory
+var
