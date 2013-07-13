@@ -214,7 +214,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, abso
             
             _Training(i,46)  = pow(_IntegerObservedED(i + MAX_ED - 1),2)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,47)  = pow(_IntegerObservedED(i + MAX_ED - 2),2)*_IntegerObservedED(i + MAX_ED - 4);
-            _Training(i,48)  = pow(_IntegerObservedED(i + MAX_ED - 3),3)*_IntegerObservedED(i + MAX_ED - 4);
+            _Training(i,48)  = pow(_IntegerObservedED(i + MAX_ED - 3),2)*_IntegerObservedED(i + MAX_ED - 4);  //###########//
             _Training(i,49)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,50)  = _IntegerObservedED(i + MAX_ED - 1)*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4);
             _Training(i,51)  = _IntegerObservedED(i + MAX_ED - 2)*_IntegerObservedED(i + MAX_ED - 3)*_IntegerObservedED(i + MAX_ED - 4);
