@@ -1,5 +1,5 @@
 # Mackey-Glass time series -- Training data
-Time MG-Data
+t x
 0 1.20000000000000
 1 1.08580500000000
 2 0.982477000000000

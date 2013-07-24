@@ -1,5 +1,5 @@
 # Mackey-Glass time series -- Test data
-Time MG-Data
+t x
 0 1.30855604113976
 1 1.32084898381861
 2 1.32441346766633
