@@ -109,7 +109,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         observed.resize(smat.size());
         
         int factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
-        int maxval = 1 << get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        int maxval = 1 << (get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
         for(std::size_t i=0; i<smat.size(); ++i) {
             // we're going to start just by looking at the value (2nd col, IDX_X):
             int x=0;
