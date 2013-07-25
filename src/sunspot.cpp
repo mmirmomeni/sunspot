@@ -75,8 +75,10 @@ public:
         add_option<ELITISM_N>(this);
         
         // sunspot options
-        add_option<SUNSPOT_INPUT>(this);
-        add_option<SUNSPOT_TEST_INPUT>(this);
+        add_option<SUNSPOT_TRAIN>(this);
+        add_option<SUNSPOT_TEST>(this);
+        add_option<SUNSPOT_INTEGER_BITS>(this);
+        add_option<SUNSPOT_FRACTIONAL_BITS>(this);
         add_option<SUNSPOT_PREDICTION_HORIZON>(this);
     }
     

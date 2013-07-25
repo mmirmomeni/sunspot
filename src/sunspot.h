@@ -5,6 +5,12 @@
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include <boost/numeric/ublas/vector.hpp>
 #include <boost/numeric/ublas/vector_proxy.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <boost/algorithm/string/split.hpp>
+
+#include <boost/regex.hpp>
+#include <boost/lexical_cast.hpp>
+
 #include <cmath>
 #include <ea/fitness_function.h>
 #include <ea/meta_data.h>
@@ -15,9 +21,14 @@
 
 using namespace ealib;
 
-// Common meta-data needed for sunspot prediction.
-LIBEA_MD_DECL(SUNSPOT_INPUT, "sunspot.input", std::string);
-LIBEA_MD_DECL(SUNSPOT_TEST_INPUT, "sunspot.test_input", std::string);
+// training data filename:
+LIBEA_MD_DECL(SUNSPOT_TRAIN, "sunspot.train_filename", std::string);
+// testing data filename:
+LIBEA_MD_DECL(SUNSPOT_TEST, "sunspot.test_filename", std::string);
+// # of bits left and right of radix point (for fixed-point representations):
+LIBEA_MD_DECL(SUNSPOT_INTEGER_BITS, "sunspot.integer_bits", std::size_t);
+LIBEA_MD_DECL(SUNSPOT_FRACTIONAL_BITS, "sunspot.fractional_bits", std::size_t);
+// how many time steps into the future we generate predictions for:
 LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
 
 /*! Fitness function for sunspot number prediction.
@@ -39,54 +50,92 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     matrix_type _test_input; //!< All historical sunspot number data used during fitness evaluation (inputs to MKV network).
     vector_type _test_observed; //!< Observed (real) historical sunspot numbers.
     
+    enum { IDX_T=0, IDX_X=1 }; // indices into the data
+    
     //! Initialize this fitness function.
     template <typename RNG, typename EA>
     void initialize(RNG& rng, EA& ea) {
         mkv::parse_desc(get<MKV_DESC>(ea), _desc);
-        
-        load_file(get<SUNSPOT_INPUT>(ea), _train_input, _train_observed);
-        load_file(get<SUNSPOT_TEST_INPUT>(ea), _test_input, _test_observed);
+        boost::get<mkv::markov_network::IN>(_desc) = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        boost::get<mkv::markov_network::OUT>(_desc) = boost::get<mkv::markov_network::IN>(_desc) * get<SUNSPOT_PREDICTION_HORIZON>(ea);
+
+        load_file(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
+        load_file(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
     }
     
-    void load_file(const std::string& filename, matrix_type& input, vector_type& observed) {
-        // read in the training data:
+    template <typename EA>
+    void load_file(const std::string& filename, matrix_type& input, vector_type& observed, EA& ea) {
+        using namespace boost;
+
+        // read in the raw training data, split by field, store it in varsize string matrix:
         std::ifstream infile(filename.c_str());
-        std::string line;
-        int nrow=0;
-        if(infile.is_open()) {
-            for(int i=0; i<4; ++i) {
-                getline(infile,line);
-            }
-            infile >> nrow;
-        } else {
+        
+        if(!infile.is_open()) {
             throw file_io_exception("sunspot.h::initialize: could not open " + filename);
         }
         
-        const int ncol = 9; // fixed number of bits per ssn
-        
-        // _input: a matrix where each row vector i is assumed to be the complete
-        // **binary input vector** to the MKV network at time i.
-        input.resize(nrow,ncol);
-        
-        // _observed: a vector where element i corresponds to the observed (real) sunspot
-        // number corresponding to row i in _inputs.
-        observed.resize(nrow);
-        
-        for(int i=0; i<nrow; ++i) {
-            int t0=0;
-            infile >> t0 >> observed(i);
-            
-            std::bitset<ncol> t0b = ~std::bitset<ncol>(t0);
-            for(int j=0; j<ncol; ++j) {
-                input(i,j) = t0b[ncol - j - 1];
+        static const regex comment("^#.*");
+        static const regex decimal("\\.");
+        bool header=false;
+        std::string line;
+        std::vector<std::vector<std::string> > smat;
+
+        while(getline(infile, line)) {
+            // remove leading & trailing whitespace:
+            trim(line);
+            // only consider lines with length > 0:
+            if(line.empty()) {
+                continue;
+            }            
+            // skip all comments:
+            if(regex_match(line, comment)) {
+                continue;
+            }
+            // the first non-comment line is assumed to be the header:
+            if(!header) {
+                header = true;
+                continue;
             }
             
-            // logic above is a bit strange.  consider instead:
-            // std::bitset<ncol> ssn(t0);
-            // for(int j=0; j<ncol; ++j) {
-            //     _input(i,j) = ssn[j];
-            // }
+            // split all remaining lines into fields, add them to the string matrix:
+            std::vector<std::string> fields;
+            split(fields, line, is_space());
+            smat.push_back(fields);
         }
+                
+        // now convert the elements in the string matrix to our input matrix
+        // and observed vector:
+        input.resize(smat.size(), get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
+        observed.resize(smat.size());
+        
+        int factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        int maxval = 1 << get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        for(std::size_t i=0; i<smat.size(); ++i) {
+            // we're going to start just by looking at the value (2nd col, IDX_X):
+            int x=0;
+            // if we have a decimal in the string, we assume that we're reading a double:
+            if(regex_match(smat[i][IDX_X], decimal)) {
+                x = static_cast<int>(boost::lexical_cast<double>(smat[i][IDX_X]) * factor);
+            } else { // it's already an integer; we're done
+                x = boost::lexical_cast<int>(smat[i][IDX_X]) << get<SUNSPOT_FRACTIONAL_BITS>(ea);
+            }
+            // check for a bad value:
+            if(x > maxval) {
+                throw bad_argument_exception("sunspot.h::load: bad value in datafile, " + boost::lexical_cast<std::string>(x));
+            }
+            // now, store the observed value and the individual bits:
+            if(i > 0) {
+                observed(i-1) = x;
+            }
+            for(std::size_t k=0; k<input.size2(); ++k) {
+                input(i,k) = (x >> k) & 0x01;
+            }
+        }
+        
+        // finally, truncate the last row off the input & observed values; this
+        // is to account for the lag:
+        input.resize(input.size1()-1, input.size2(), true);
+        observed.resize(observed.size()-1, true);
     }
     
     /*! Test an individual for multiple predictions.
@@ -105,8 +154,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         
         bool first=true;
         
-        // run each row of _inputs through the MKV network for a single update,
-        // place the results in the output matrix:
+        // run each row of _inputs through the MKV network for a single update:
         for(std::size_t i=0; i<input.size1(); ++i) {
             if(recurse) {
                 std::vector<int> v;
