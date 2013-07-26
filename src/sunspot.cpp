@@ -83,6 +83,7 @@ public:
     }
     
     virtual void gather_tools() {
+        add_tool<sunspot_data>(this);
         add_tool<sunspot_detail>(this);
         add_tool<sunspot_test>(this);
         add_tool<sunspot_test_rmse>(this);

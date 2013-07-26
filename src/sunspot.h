@@ -25,6 +25,8 @@ using namespace ealib;
 LIBEA_MD_DECL(SUNSPOT_TRAIN, "sunspot.train_filename", std::string);
 // testing data filename:
 LIBEA_MD_DECL(SUNSPOT_TEST, "sunspot.test_filename", std::string);
+// what format datafile are we using?
+LIBEA_MD_DECL(SUNSPOT_DATA_FORMAT, "sunspot.data_format", int);
 // # of bits left and right of radix point (for fixed-point representations):
 LIBEA_MD_DECL(SUNSPOT_INTEGER_BITS, "sunspot.integer_bits", std::size_t);
 LIBEA_MD_DECL(SUNSPOT_FRACTIONAL_BITS, "sunspot.fractional_bits", std::size_t);
@@ -59,12 +61,61 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         boost::get<mkv::markov_network::IN>(_desc) = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
         boost::get<mkv::markov_network::OUT>(_desc) = boost::get<mkv::markov_network::IN>(_desc) * get<SUNSPOT_PREDICTION_HORIZON>(ea);
 
-        load_file(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
-        load_file(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
+        if(get<SUNSPOT_DATA_FORMAT>(ea,0)) {
+            // old style, default
+            load_file(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
+            load_file(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
+        } else {
+            // new style
+            load_file2(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
+            load_file2(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
+        }
     }
     
     template <typename EA>
     void load_file(const std::string& filename, matrix_type& input, vector_type& observed, EA& ea) {
+        // read in the training data:
+        std::ifstream infile(filename.c_str());
+        std::string line;
+        int nrow=0;
+        if(infile.is_open()) {
+            for(int i=0; i<4; ++i) {
+                getline(infile,line);
+            }
+            infile >> nrow;
+        } else {
+            throw file_io_exception("sunspot.h::initialize: could not open " + filename);
+        }
+        
+        const int ncol = 9; // fixed number of bits per ssn
+        
+        // _input: a matrix where each row vector i is assumed to be the complete
+        // **binary input vector** to the MKV network at time i.
+        input.resize(nrow,ncol);
+        
+        // _observed: a vector where element i corresponds to the observed (real) sunspot
+        // number corresponding to row i in _inputs.
+        observed.resize(nrow);
+        
+        for(int i=0; i<nrow; ++i) {
+            int t0=0;
+            infile >> t0 >> observed(i);
+            
+            std::bitset<ncol> t0b = ~std::bitset<ncol>(t0);
+            for(int j=0; j<ncol; ++j) {
+                input(i,j) = t0b[ncol - j - 1];
+            }
+            
+            // logic above is a bit strange.  consider instead:
+            // std::bitset<ncol> ssn(t0);
+            // for(int j=0; j<ncol; ++j) {
+            //     _input(i,j) = ssn[j];
+            // }
+        }
+    }
+    
+    template <typename EA>
+    void load_file2(const std::string& filename, matrix_type& input, vector_type& observed, EA& ea) {
         using namespace boost;
 
         // read in the raw training data, split by field, store it in varsize string matrix:
@@ -233,6 +284,33 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     }
 };
 
+
+template <typename EA>
+struct sunspot_data : public ealib::analysis::unary_function<EA> {
+    static const char* name() { return "sunspot_data";}
+    
+    virtual void operator()(EA& ea) {
+        using namespace ealib;
+        using namespace ealib::analysis;
+        
+        datafile df("sunspot_data.dat");
+        df.add_field("observed");
+        
+        for(std::size_t i=0; i<(get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea)); ++i) {
+            df.add_field("input" + boost::lexical_cast<std::string>(i));
+        }
+        
+        typename EA::fitness_function_type::matrix_type& M=ea.fitness_function()._train_input;
+        typename EA::fitness_function_type::vector_type& V=ea.fitness_function()._train_observed;
+        
+        for(std::size_t i=0; i<M.size1(); ++i) {
+            typename EA::fitness_function_type::row_type r(M,i);
+            df.write(V(i)).write_all(r.begin(), r.end()).endl();
+        }
+    }
+};
+
+
 template <typename EA>
 struct sunspot_detail : public ealib::analysis::unary_function<EA> {
     static const char* name() { return "sunspot_detail";}
@@ -244,11 +322,10 @@ struct sunspot_detail : public ealib::analysis::unary_function<EA> {
         
         datafile df("sunspot_detail.dat");
         df.add_field("observed");
-        
         for(std::size_t i=0; i<get<SUNSPOT_PREDICTION_HORIZON>(ea); ++i) {
             df.add_field("tplus" + boost::lexical_cast<std::string>(i+1));
         }
-        
+                
         sunspot_fitness::matrix_type output;
         ea.fitness_function().train(ind, output, ea.rng(), ea);
         
