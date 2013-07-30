@@ -25,8 +25,6 @@ using namespace ealib;
 LIBEA_MD_DECL(SUNSPOT_TRAIN, "sunspot.train_filename", std::string);
 // testing data filename:
 LIBEA_MD_DECL(SUNSPOT_TEST, "sunspot.test_filename", std::string);
-// what format datafile are we using?
-LIBEA_MD_DECL(SUNSPOT_DATA_FORMAT, "sunspot.data_format", int);
 // # of bits left and right of radix point (for fixed-point representations):
 LIBEA_MD_DECL(SUNSPOT_INTEGER_BITS, "sunspot.integer_bits", std::size_t);
 LIBEA_MD_DECL(SUNSPOT_FRACTIONAL_BITS, "sunspot.fractional_bits", std::size_t);
@@ -61,61 +59,42 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         boost::get<mkv::markov_network::IN>(_desc) = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
         boost::get<mkv::markov_network::OUT>(_desc) = boost::get<mkv::markov_network::IN>(_desc) * get<SUNSPOT_PREDICTION_HORIZON>(ea);
 
-        if(get<SUNSPOT_DATA_FORMAT>(ea,0)) {
-            // old style, default
-            load_file(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
-            load_file(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
-        } else {
-            // new style
-            load_file2(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
-            load_file2(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
-        }
+        // we're currently limiting the number of bits that we're using to == long:
+        assert((get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea)) < (sizeof(long)*8));
+        
+        load_file(get<SUNSPOT_TRAIN>(ea), _train_input, _train_observed, ea);
+        load_file(get<SUNSPOT_TEST>(ea), _test_input, _test_observed, ea);
     }
     
+    /*! Load training or testing data from a file.
+     
+     The file format is as follows:
+     
+     # commented lines begin with a '#'
+     # the first non-commented line is assumed to contain the header
+     time x
+     # all following non-comment, non-empty lines are to contain at least two
+     # decimal numbers, the first being the time, and the second the observed value
+     # of the time seriers
+     0 75
+     1 23
+     # in the case of a decimal number, e.g.:
+     2 87.4
+     # ... x will be converted to a fixed-point number.
+     
+     This loader is a bit more complicated than it otherwise could be, but we're 
+     also transparently handling integer vs. fixed-point numbers and trying to be
+     very conservative with regard to the datafile format.
+     
+     \note this has been tested to produce the same ouput as the original loader,
+     with two changes: the original form of this data was (a) inverted, and 
+     (b) reversed the MSB and LSB.  we "correct" those here, but may have to undo 
+     them depending on performance.
+
+     \todo rewrite using boost::spirit?
+     */
     template <typename EA>
     void load_file(const std::string& filename, matrix_type& input, vector_type& observed, EA& ea) {
-        // read in the training data:
-        std::ifstream infile(filename.c_str());
-        std::string line;
-        int nrow=0;
-        if(infile.is_open()) {
-            for(int i=0; i<4; ++i) {
-                getline(infile,line);
-            }
-            infile >> nrow;
-        } else {
-            throw file_io_exception("sunspot.h::initialize: could not open " + filename);
-        }
-        
-        const int ncol = 9; // fixed number of bits per ssn
-        
-        // _input: a matrix where each row vector i is assumed to be the complete
-        // **binary input vector** to the MKV network at time i.
-        input.resize(nrow,ncol);
-        
-        // _observed: a vector where element i corresponds to the observed (real) sunspot
-        // number corresponding to row i in _inputs.
-        observed.resize(nrow);
-        
-        for(int i=0; i<nrow; ++i) {
-            int t0=0;
-            infile >> t0 >> observed(i);
-            
-            std::bitset<ncol> t0b = ~std::bitset<ncol>(t0);
-            for(int j=0; j<ncol; ++j) {
-                input(i,j) = t0b[ncol - j - 1];
-            }
-            
-            // logic above is a bit strange.  consider instead:
-            // std::bitset<ncol> ssn(t0);
-            // for(int j=0; j<ncol; ++j) {
-            //     _input(i,j) = ssn[j];
-            // }
-        }
-    }
-    
-    template <typename EA>
-    void load_file2(const std::string& filename, matrix_type& input, vector_type& observed, EA& ea) {
         using namespace boost;
 
         // read in the raw training data, split by field, store it in varsize string matrix:
@@ -156,37 +135,43 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
                 
         // now convert the elements in the string matrix to our input matrix
         // and observed vector:
-        input.resize(smat.size(), get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
-        observed.resize(smat.size());
+        input.resize(smat.size()-1, get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
+        observed.resize(smat.size()-1);
         
-        int factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
-        int maxval = 1 << (get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
+        long factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        long maxval = 1 << (get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
+        
         for(std::size_t i=0; i<smat.size(); ++i) {
             // we're going to start just by looking at the value (2nd col, IDX_X):
-            int x=0;
+            long x=0;
+            
             // if we have a decimal in the string, we assume that we're reading a double:
             if(regex_match(smat[i][IDX_X], decimal)) {
-                x = static_cast<int>(boost::lexical_cast<double>(smat[i][IDX_X]) * factor);
-            } else { // it's already an integer; we're done
-                x = boost::lexical_cast<int>(smat[i][IDX_X]) << get<SUNSPOT_FRACTIONAL_BITS>(ea);
+                x = static_cast<long>(boost::lexical_cast<double>(smat[i][IDX_X]) * factor);
+            } else {
+                // it's already an integer; we're done
+                x = boost::lexical_cast<long>(smat[i][IDX_X]) << get<SUNSPOT_FRACTIONAL_BITS>(ea);
             }
+            
             // check for a bad value:
             if(x > maxval) {
                 throw bad_argument_exception("sunspot.h::load: bad value in datafile, " + boost::lexical_cast<std::string>(x));
             }
-            // now, store the observed value and the individual bits:
+            
+            // now, store the input bits and the observed value.  we're
+            // lagging the observed values by one time step:
             if(i > 0) {
                 observed(i-1) = x;
             }
-            for(std::size_t k=0; k<input.size2(); ++k) {
-                input(i,k) = (x >> k) & 0x01;
+            
+            // and stopping one row early on the input values:
+            if(i < (smat.size()-1)) {
+                std::bitset<sizeof(long)*8> bits(x);
+                for(std::size_t k=0; k<input.size2(); ++k) {
+                    input(i,k) = bits[k];
+                }
             }
         }
-        
-        // finally, truncate the last row off the input & observed values; this
-        // is to account for the lag:
-        input.resize(input.size1()-1, input.size2(), true);
-        observed.resize(observed.size()-1, true);
     }
     
     /*! Test an individual for multiple predictions.
@@ -256,7 +241,11 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             bnu::vector_range<vector_type>(observed, bnu::range(i,observed.size()))
             - bnu::vector_range<column_type>(c, bnu::range(0,c.size()-i));
             
-            rmse(i) = sqrt(static_cast<double>(bnu::inner_prod(err,err)) / static_cast<double>(err.size()));
+            // err is a possibly-fixed-point integer vector; convert it to floating
+            // point, and calculate rmse:
+            long factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
+            dvector_type derr = err / static_cast<double>(factor);
+            rmse(i) = sqrt(bnu::inner_prod(derr,derr) / static_cast<double>(derr.size()));
         }
         
         return rmse;
