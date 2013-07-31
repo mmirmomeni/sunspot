@@ -167,6 +167,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             // and stopping one row early on the input values:
             if(i < (smat.size()-1)) {
                 std::bitset<sizeof(long)*8> bits(x);
+                bits = ~bits;
                 for(std::size_t k=0; k<input.size2(); ++k) {
                     input(i,k) = bits[k];
                 }
