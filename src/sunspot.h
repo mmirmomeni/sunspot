@@ -169,7 +169,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
                 std::bitset<sizeof(long)*8> bits(x);
                 bits = ~bits;
                 for(std::size_t k=0; k<input.size2(); ++k) {
-                    input(i,k) = bits[k];
+                    //input(i,k) = bits[k];
+                    input(i,k) = bits[input.size2()-1-k];
                 }
             }
         }
