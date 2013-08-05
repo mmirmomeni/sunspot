@@ -105,7 +105,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         }
         
         static const regex comment("^#.*");
-        static const regex decimal("\\.");
+        static const regex decimal("\\d+\\.\\d+");
         bool header=false;
         std::string line;
         std::vector<std::vector<std::string> > smat;

@@ -1,0 +1,11 @@
+set description test
+set email dk@msu.edu
+set freq_email Crash
+set priority 3
+set class_pref 99
+set walltime 1
+set mem_request 2
+set config_dir config
+set max_cpus 30
+
+1..30 tb0 /mnt/home/dk/bin/sunspot -l /mnt/home/dk/research/src/sunspot/expr/002-multi/tb0_$seed/checkpoint-50000.xml.gz --analyze sunspot_test_rmse --override --sunspot.test_input=/mnt/home/dk/data/sunspot/MarkovNetworkBinarykDataTest.txt
