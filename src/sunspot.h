@@ -167,10 +167,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             // and stopping one row early on the input values:
             if(i < (smat.size()-1)) {
                 std::bitset<sizeof(long)*8> bits(x);
-                bits = ~bits;
                 for(std::size_t k=0; k<input.size2(); ++k) {
-                    //input(i,k) = bits[k];
-                    input(i,k) = bits[input.size2()-1-k];
+                    input(i,k) = bits[k];
                 }
             }
         }
@@ -247,6 +245,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             // point, and calculate rmse:
             long factor = 1 << get<SUNSPOT_FRACTIONAL_BITS>(ea);
             dvector_type derr = err / static_cast<double>(factor);
+            
             rmse(i) = sqrt(bnu::inner_prod(derr,derr) / static_cast<double>(derr.size()));
         }
         

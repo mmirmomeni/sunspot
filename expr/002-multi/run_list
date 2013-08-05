@@ -11,8 +11,5 @@ set max_cpus 30
 # normal data, lsb == 0th bit
 # 1..30 ta0 /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed $seed
 
-# inverted data
-# 1..30 tb0 /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed $seed
-
-# inverted and reversed
-1..30 tc0 /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed $seed
+# repeat, for replicability
+1..30 tb0 /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed $seed
