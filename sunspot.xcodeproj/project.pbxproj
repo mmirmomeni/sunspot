@@ -21,8 +21,6 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
-		42C7730B16F73D3900EAFD8F /* SunSpotNumber.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 42C772F916F73BE300EAFD8F /* SunSpotNumber.cpp */; };
-		42C7730C16F73DB700EAFD8F /* sunspot_data.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 42C772F816F73BE300EAFD8F /* sunspot_data.cpp */; };
 		42C7730D16F7407700EAFD8F /* sunspot.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 424E4D6616BC27DE00716FFD /* sunspot.cpp */; };
 		42F4EE5F16AEE80D000123A4 /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 42B7A9B616305C4B00BDBA8A /* libz.dylib */; };
 		42F4EE6016AEE80D000123A4 /* libmkv.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 42279CB015D556F100DD63BB /* libmkv.a */; };
@@ -40,15 +38,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		42C7730016F73CB800EAFD8F /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
 		42F4EE6216AEE80D000123A4 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -69,22 +58,10 @@
 		42706B11166AF51C003FB2E3 /* sunspot.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = sunspot.xcconfig; sourceTree = "<group>"; };
 		4281FF0316C4929F0066610C /* ealib.cfg */ = {isa = PBXFileReference; lastKnownFileType = text; path = ealib.cfg; sourceTree = "<group>"; };
 		42B7A9B616305C4B00BDBA8A /* libz.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.dylib; path = usr/lib/libz.dylib; sourceTree = SDKROOT; };
-		42C550FE1760D01600C74564 /* prediction_horizon.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = prediction_horizon.h; sourceTree = "<group>"; };
-		42C772F816F73BE300EAFD8F /* sunspot_data.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sunspot_data.cpp; sourceTree = "<group>"; };
-		42C772F916F73BE300EAFD8F /* SunSpotNumber.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SunSpotNumber.cpp; sourceTree = "<group>"; };
-		42C772FA16F73BE300EAFD8F /* SunSpotNumber.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SunSpotNumber.h; sourceTree = "<group>"; };
-		42C7730216F73CB800EAFD8F /* sunspot-data */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "sunspot-data"; sourceTree = BUILT_PRODUCTS_DIR; };
 		42F4EE6616AEE80D000123A4 /* sunspot */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = sunspot; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		42C772FF16F73CB800EAFD8F /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		42F4EE5E16AEE80D000123A4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -113,7 +90,6 @@
 			isa = PBXGroup;
 			children = (
 				42F4EE6616AEE80D000123A4 /* sunspot */,
-				42C7730216F73CB800EAFD8F /* sunspot-data */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -132,12 +108,8 @@
 		42441A01158613F5009863BE /* src */ = {
 			isa = PBXGroup;
 			children = (
-				42C772F816F73BE300EAFD8F /* sunspot_data.cpp */,
-				42C772F916F73BE300EAFD8F /* SunSpotNumber.cpp */,
-				42C772FA16F73BE300EAFD8F /* SunSpotNumber.h */,
 				424E4D6616BC27DE00716FFD /* sunspot.cpp */,
 				424E4D6716BC27DE00716FFD /* sunspot.h */,
-				42C550FE1760D01600C74564 /* prediction_horizon.h */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -154,23 +126,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		42C7730116F73CB800EAFD8F /* sunspot-data */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 42C7730816F73CB800EAFD8F /* Build configuration list for PBXNativeTarget "sunspot-data" */;
-			buildPhases = (
-				42C772FE16F73CB800EAFD8F /* Sources */,
-				42C772FF16F73CB800EAFD8F /* Frameworks */,
-				42C7730016F73CB800EAFD8F /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "sunspot-data";
-			productName = "sunspot-data";
-			productReference = 42C7730216F73CB800EAFD8F /* sunspot-data */;
-			productType = "com.apple.product-type.tool";
-		};
 		42F4EE5B16AEE80D000123A4 /* sunspot */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 42F4EE6316AEE80D000123A4 /* Build configuration list for PBXNativeTarget "sunspot" */;
@@ -211,21 +166,11 @@
 			targets = (
 				42720F6F163823AF008C8E63 /* all */,
 				42F4EE5B16AEE80D000123A4 /* sunspot */,
-				42C7730116F73CB800EAFD8F /* sunspot-data */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		42C772FE16F73CB800EAFD8F /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				42C7730B16F73D3900EAFD8F /* SunSpotNumber.cpp in Sources */,
-				42C7730C16F73DB700EAFD8F /* sunspot_data.cpp in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		42F4EE5C16AEE80D000123A4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -297,45 +242,6 @@
 			};
 			name = Release;
 		};
-		42C7730916F73CB800EAFD8F /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		42C7730A16F73CB800EAFD8F /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
 		42F4EE6416AEE80D000123A4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -375,15 +281,6 @@
 			buildConfigurations = (
 				42720F71163823AF008C8E63 /* Debug */,
 				42720F72163823AF008C8E63 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		42C7730816F73CB800EAFD8F /* Build configuration list for PBXNativeTarget "sunspot-data" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				42C7730916F73CB800EAFD8F /* Debug */,
-				42C7730A16F73CB800EAFD8F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
