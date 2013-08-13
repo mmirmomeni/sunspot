@@ -44,7 +44,7 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
       useCustomWorkingDirectory = "YES"
-      customWorkingDirectory = "/Users/dk/Documents/repositories/research.hg/src/sunspot/tmp"
+      customWorkingDirectory = "/Users/dk/Documents/repositories/research.hg/var/sunspot/002-multi/ta0_18"
       buildConfiguration = "Debug"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
@@ -60,28 +60,12 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "-c ../etc/ealib.cfg --ea.rng.seed=1 --with-time"
-            isEnabled = "YES">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "--analyze sunspot_data"
-            isEnabled = "NO">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz --analyze reduced_graph"
+            argument = "-c ../etc/ealib.cfg --ea.rng.seed=2 --verbose"
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "-l checkpoint-50000.xml.gz --analyze sunspot_test"
-            isEnabled = "NO">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz --analyze sunspot_recursive_test"
-            isEnabled = "NO">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "--override --sunspot.test_input=../data/MarkovNetworkBinarykDataTest.txt"
-            isEnabled = "NO">
+            isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>

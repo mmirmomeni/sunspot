@@ -28,14 +28,32 @@
 #include "sunspot.h"
 using namespace ealib;
 
-//! Configurator.
 template <typename EA>
-struct configuration : public abstract_configuration<EA> {
-    //! Called to generate the initial EA population.
-    void initial_population(EA& ea) {
-        generate_ancestors(mkv_random_individual(), get<POPULATION_SIZE>(ea), ea);
+struct sunspot_configuration : public markov_network_configuration<EA> {
+    typedef markov_network_configuration<EA> base_type;
+    
+    //! Called as the final step of EA initialization.
+    virtual void initialize(EA& ea) {
+        base_type::initialize(ea);
+
+        boost::get<mkv::markov_network::IN>(base_type::mkv_desc) = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
+        boost::get<mkv::markov_network::OUT>(base_type::mkv_desc) = 2 * boost::get<mkv::markov_network::IN>(base_type::mkv_desc) * get<SUNSPOT_PREDICTION_HORIZON>(ea);
+        
+        // we're currently limiting the number of bits that we're using to == long:
+        assert((get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea)) < (sizeof(long)*8));
     }
 };
+
+
+typedef evolutionary_algorithm<
+circular_genome<int>,
+mkv_mutation,
+sunspot_fitness,
+sunspot_configuration,
+recombination::asexual,
+generational_models::death_birth_process<selection::proportionate< >, selection::elitism<selection::random> >
+> ea_type;
+
 
 /*! Define the EA's command-line interface.
  */
@@ -96,14 +114,4 @@ public:
         add_event<datafiles::fitness>(this, ea);
     }
 };
-
-typedef evolutionary_algorithm<
-circular_genome<int>,
-mkv_mutation,
-sunspot_fitness,
-configuration,
-recombination::asexual,
-generational_models::death_birth_process<selection::proportionate< >, selection::elitism<selection::random> >
-> ea_type;
-
 LIBEA_CMDLINE_INSTANCE(ea_type, cli);
