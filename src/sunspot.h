@@ -30,6 +30,9 @@ LIBEA_MD_DECL(SUNSPOT_INTEGER_BITS, "sunspot.integer_bits", std::size_t);
 LIBEA_MD_DECL(SUNSPOT_FRACTIONAL_BITS, "sunspot.fractional_bits", std::size_t);
 // how many time steps into the future we generate predictions for:
 LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
+// limit the size of the dataset?
+LIBEA_MD_DECL(SUNSPOT_LIMIT, "sunspot.limit", std::size_t);
+
 
 /*! Fitness function for sunspot number prediction.
  */
@@ -169,7 +172,12 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             split(fields, line, is_space());
             smat.push_back(fields);
         }
-                
+        
+        // are we limiting the size of the dataset?
+        if(get<SUNSPOT_LIMIT>(ea,0)>0) {
+            smat.resize(std::min(smat.size(), get<SUNSPOT_LIMIT>(ea)));
+        }
+        
         // now convert the elements in the string matrix to our input matrix
         // and observed vector:
         input.resize(smat.size()-1, get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea));
@@ -208,16 +216,16 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
                 
                 // for an unknown reason, inverting the input bits and reversing the
                 // position of the LSB seems to help.  Why?
-                std::bitset<sizeof(long)*8> bits(~x);
-                for(std::size_t k=0; k<input.size2(); ++k) {
-                    input(i,k) = bits[input.size2() - k - 1];
-                }
+                //                std::bitset<sizeof(long)*8> bits(~x);
+                //                for(std::size_t k=0; k<input.size2(); ++k) {
+                //                    input(i,k) = bits[input.size2() - k - 1];
+                //                }
                 
                 // it'd be nice if we could do this instead:
-                //                std::bitset<sizeof(long)*8> bits(x);
-                //                for(std::size_t k=0; k<input.size2(); ++k) {
-                //                    input(i,k) = bits[k];
-                //                }
+                std::bitset<sizeof(long)*8> bits(x);
+                for(std::size_t k=0; k<input.size2(); ++k) {
+                    input(i,k) = bits[k];
+                }
             }
         }
     }

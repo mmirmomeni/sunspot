@@ -98,6 +98,7 @@ public:
         add_option<SUNSPOT_INTEGER_BITS>(this);
         add_option<SUNSPOT_FRACTIONAL_BITS>(this);
         add_option<SUNSPOT_PREDICTION_HORIZON>(this);
+        add_option<SUNSPOT_LIMIT>(this);
     }
     
     virtual void gather_tools() {
