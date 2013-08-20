@@ -9,4 +9,4 @@ set config_dir config
 set max_cpus 30
 
 # testing
-1..30 ta0 /mnt/home/dk/bin/sunspot -l /mnt/home/dk/research/src/sunspot/expr/002-multi/ta0_$seed/checkpoint-50000.xml.gz --analyze sunspot_test_rmse
+1..30 ta0 /mnt/home/dk/bin/sunspot -l /mnt/home/dk/research/src/sunspot/expr/002-ssn/ta0_$seed/checkpoint-100000.xml.gz --analyze sunspot_test_rmse

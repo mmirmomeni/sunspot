@@ -1,11 +1,12 @@
-set description 001-initial
-set email mirmomen@msu.edu
+set description 002-ssn
+set email dk@msu.edu
 set freq_email Crash
 set priority 3
 set class_pref 99
-set walltime 96
+set walltime 24
 set mem_request 2
 set config_dir config
 set max_cpus 30
 
+# taking out negation and LSB inversion
 1..30 ta0 /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed $seed
