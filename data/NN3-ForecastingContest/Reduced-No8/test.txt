@@ -1,0 +1,21 @@
+# Eighth time series of NN3 competition reduced data (11 time series). Training set. The first column represents the time and the second column has the first data from 0 to 18. Minimum and maximum of data is 1005 and 8878 respectively. 
+t x
+0 3438
+1 3558
+2 4388
+3 1950
+4 2818
+5 2423
+6 3538
+7 4465
+8 4835
+9 2595
+10 3910
+11 5638
+12 3673
+13 3870
+14 5748
+15 3363
+16 4505
+17 4520
+18 4888
