@@ -19,14 +19,13 @@
  */
 #include <ea/evolutionary_algorithm.h>
 #include <ea/generational_models/death_birth_process.h>
-#include <ea/representations/circular_genome.h>
 #include <ea/selection/elitism.h>
 #include <ea/datafiles/fitness.h>
 #include <ea/cmdline_interface.h>
 #include <ea/markov_network.h>
-
 #include "sunspot.h"
 using namespace ealib;
+using namespace mkv;
 
 template <typename EA>
 struct sunspot_configuration : public markov_network_configuration<EA> {
@@ -36,18 +35,23 @@ struct sunspot_configuration : public markov_network_configuration<EA> {
     virtual void initialize(EA& ea) {
         base_type::initialize(ea);
 
-        boost::get<mkv::markov_network::IN>(base_type::mkv_desc) = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
-        boost::get<mkv::markov_network::OUT>(base_type::mkv_desc) = 2 * boost::get<mkv::markov_network::IN>(base_type::mkv_desc) * get<SUNSPOT_PREDICTION_HORIZON>(ea);
+        std::size_t nbits = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
         
         // we're currently limiting the number of bits that we're using to == long:
-        assert((get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea)) < (sizeof(long)*8));
+        assert(nbits < (sizeof(long)*8));
+
+        // make sure we have at least 1 lag:
+        assert(get<SUNSPOT_INPUT_LAGS>(ea) >= 1);
+
+        boost::get<mkv::markov_network::IN>(base_type::mkv_desc) = get<SUNSPOT_INPUT_LAGS>(ea) * nbits;
+        boost::get<mkv::markov_network::OUT>(base_type::mkv_desc) = 2 * nbits * get<SUNSPOT_PREDICTION_HORIZON>(ea);
     }
 };
 
 
 typedef evolutionary_algorithm<
-circular_genome<int>,
-mkv_mutation,
+mkv::representation_type,
+mkv::mutation_type,
 sunspot_fitness,
 sunspot_configuration,
 recombination::asexual,
@@ -66,9 +70,6 @@ public:
         add_option<MKV_UPDATE_N>(this);
         add_option<MKV_GATE_TYPES>(this);
         add_option<MKV_INITIAL_GATES>(this);
-        add_option<MKV_REPR_INITIAL_SIZE>(this);
-        add_option<MKV_REPR_MAX_SIZE>(this);
-        add_option<MKV_REPR_MIN_SIZE>(this);
         add_option<GATE_INPUT_LIMIT>(this);
         add_option<GATE_INPUT_FLOOR>(this);
         add_option<GATE_OUTPUT_LIMIT>(this);
@@ -78,13 +79,18 @@ public:
         add_option<GATE_WV_STEPS>(this);
         
         // ea options
-        add_option<REPRESENTATION_SIZE>(this);
+        add_option<REPRESENTATION_INITIAL_SIZE>(this);
+        add_option<REPRESENTATION_MIN_SIZE>(this);
+        add_option<REPRESENTATION_MAX_SIZE>(this);
         add_option<POPULATION_SIZE>(this);
         add_option<REPLACEMENT_RATE_P>(this);
         add_option<MUTATION_PER_SITE_P>(this);
+        add_option<MUTATION_UNIFORM_INT_MIN>(this);
         add_option<MUTATION_UNIFORM_INT_MAX>(this);
         add_option<MUTATION_DELETION_P>(this);
-        add_option<MUTATION_DUPLICATION_P>(this);
+        add_option<MUTATION_INSERTION_P>(this);
+        add_option<MUTATION_INDEL_MIN_SIZE>(this);
+        add_option<MUTATION_INDEL_MAX_SIZE>(this);
         add_option<RUN_UPDATES>(this);
         add_option<RUN_EPOCHS>(this);
         add_option<CHECKPOINT_PREFIX>(this);
@@ -99,15 +105,19 @@ public:
         add_option<SUNSPOT_FRACTIONAL_BITS>(this);
         add_option<SUNSPOT_PREDICTION_HORIZON>(this);
         add_option<SUNSPOT_LIMIT>(this);
+        add_option<SUNSPOT_INPUT_LAGS>(this);
     }
     
     virtual void gather_tools() {
         add_tool<sunspot_data>(this);
-        add_tool<sunspot_detail>(this);
-        add_tool<sunspot_test>(this);
+        add_tool<sunspot_train_detail>(this);
+        add_tool<sunspot_test_detail>(this);
+        add_tool<sunspot_train_rmse>(this);
         add_tool<sunspot_test_rmse>(this);
         add_tool<sunspot_recursive_test>(this);
+        add_tool<mkv::causal_graph>(this);
         add_tool<mkv::reduced_graph>(this);
+        add_tool<mkv::genetic_graph>(this);
         add_tool<mkv::network_statistics>(this);
     }
     

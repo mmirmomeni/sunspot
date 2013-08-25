@@ -51,6 +51,7 @@
 
 /* Begin PBXFileReference section */
 		42279CB015D556F100DD63BB /* libmkv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmkv.a; path = ../DerivedData/research/Build/Products/Debug/libmkv.a; sourceTree = "<group>"; };
+		4242B60017CA2A35005D05BF /* analysis.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = analysis.h; sourceTree = "<group>"; };
 		42441B3615862C89009863BE /* libea.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libea.a; path = ../DerivedData/research/Build/Products/Debug/libea.a; sourceTree = "<group>"; };
 		42441B3E15862E1B009863BE /* Jamroot */ = {isa = PBXFileReference; lastKnownFileType = text; path = Jamroot; sourceTree = "<group>"; };
 		424E4D6616BC27DE00716FFD /* sunspot.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = sunspot.cpp; sourceTree = "<group>"; };
@@ -108,6 +109,7 @@
 		42441A01158613F5009863BE /* src */ = {
 			isa = PBXGroup;
 			children = (
+				4242B60017CA2A35005D05BF /* analysis.h */,
 				424E4D6616BC27DE00716FFD /* sunspot.cpp */,
 				424E4D6716BC27DE00716FFD /* sunspot.h */,
 			);

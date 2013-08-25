@@ -44,7 +44,7 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
       useCustomWorkingDirectory = "YES"
-      customWorkingDirectory = "/Users/dk/Documents/repositories/research.hg/var/sunspot/002-multi/ta0_18"
+      customWorkingDirectory = "/Users/dk/Documents/repositories/research.hg/src/sunspot/tmp"
       buildConfiguration = "Debug"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
@@ -60,12 +60,28 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "-c ../etc/ealib.cfg --ea.rng.seed=2 --verbose"
+            argument = "-c ../etc/ealib.cfg --ea.rng.seed=4 --verbose"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-l checkpoint-50000.xml.gz"
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz --analyze sunspot_test"
-            isEnabled = "YES">
+            argument = "--override --sunspot.input_lags=1"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--analyze sunspot_data"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--analyze reduced_graph"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--analyze causal_graph"
+            isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>
