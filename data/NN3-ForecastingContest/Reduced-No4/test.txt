@@ -1,0 +1,20 @@
+# Forth time series of NN3 competition reduced data (11 time series). Test set. The first column represents the time and the second column has the first data from 0 to 17. Minimum and maximum of data is 656 and 9216 respectively. 
+t x
+0 6658
+1 6423
+2 6351
+3 5735
+4 5820
+5 2966
+6 2089
+7 2892
+8 5992
+9 6718
+10 9275
+11 7163
+12 6915
+13 6919
+14 5870
+15 6316
+16 6036
+17 3021

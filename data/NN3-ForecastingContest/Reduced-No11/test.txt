@@ -1,0 +1,20 @@
+# Eleventh time series of NN3 competition reduced data (11 time series). Test set. The first column represents the time and the second column has the first data from 0 to 17. Minimum and maximum of data is 2200 and 6310 respectively. 
+t x
+0 2450
+1 2950
+2 3350
+3 4450
+4 4210
+5 2650
+6 2414
+7 2823
+8 2444
+9 2666
+10 3052
+11 2397
+12 2463
+13 3385
+14 3290
+15 5408
+16 4000
+17 2513
