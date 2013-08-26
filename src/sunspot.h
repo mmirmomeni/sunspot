@@ -215,7 +215,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
 	dvector_type eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
         namespace bnu=boost::numeric::ublas;
         mkv::markov_network& net = ealib::phenotype(ind,rng,ea);
-        
+
+        // number of network updates per sample:
         const std::size_t nupdates = get<mkv::MKV_UPDATE_N>(ea);
         
         // outputs from the MKV network, initialized to the same size as the number
@@ -223,14 +224,17 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
         const std::size_t ph=get<SUNSPOT_PREDICTION_HORIZON>(ea);
         output.resize(input.size1(), ph);
         
+        // size of input and output variables, in bits:
+        const std::size_t nbits = get<SUNSPOT_INTEGER_BITS>(ea) + get<SUNSPOT_FRACTIONAL_BITS>(ea);
+
         // run each row of _inputs through the MKV network:
         for(std::size_t i=0; i<input.size1(); ++i) {
             row_type r(input,i);
-            mkv::update(net, nupdates, r);
+            mkv::update(net, 1, nupdates, r);
             
             for(std::size_t j=0; j<ph; ++j) {
-                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*input.size2(),
-                                                        net.begin_output()+(j+1)*2*input.size2());
+                output(i,j) = algorithm::range_pair2int(net.begin_output()+j*2*nbits,
+                                                        net.begin_output()+(j+1)*2*nbits);
             }
         }
         
