@@ -82,8 +82,6 @@ public:
         add_option<REPRESENTATION_INITIAL_SIZE>(this);
         add_option<REPRESENTATION_MIN_SIZE>(this);
         add_option<REPRESENTATION_MAX_SIZE>(this);
-        add_option<POPULATION_SIZE>(this);
-        add_option<REPLACEMENT_RATE_P>(this);
         add_option<MUTATION_PER_SITE_P>(this);
         add_option<MUTATION_UNIFORM_INT_MIN>(this);
         add_option<MUTATION_UNIFORM_INT_MAX>(this);
@@ -91,6 +89,9 @@ public:
         add_option<MUTATION_INSERTION_P>(this);
         add_option<MUTATION_INDEL_MIN_SIZE>(this);
         add_option<MUTATION_INDEL_MAX_SIZE>(this);
+
+        add_option<REPLACEMENT_RATE_P>(this);
+        add_option<POPULATION_SIZE>(this);
         add_option<RUN_UPDATES>(this);
         add_option<RUN_EPOCHS>(this);
         add_option<CHECKPOINT_PREFIX>(this);
