@@ -24,13 +24,16 @@ using namespace ealib;
 LIBEA_MD_DECL(SUNSPOT_TRAIN, "sunspot.train_filename", std::string);
 // testing data filename:
 LIBEA_MD_DECL(SUNSPOT_TEST, "sunspot.test_filename", std::string);
-// # of bits left and right of radix point (for fixed-point representations):
+// # of bits left of radix point:
 LIBEA_MD_DECL(SUNSPOT_INTEGER_BITS, "sunspot.integer_bits", std::size_t);
+// # of bits right of radix point:
 LIBEA_MD_DECL(SUNSPOT_FRACTIONAL_BITS, "sunspot.fractional_bits", std::size_t);
-// how many time steps into the future we generate predictions for:
-LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
+// value by which to scale input values (for decimal-valued input only):
+LIBEA_MD_DECL(SUNSPOT_SCALE, "sunspot.input_scale", double);
 // how many lags are to be included in the inputs?
 LIBEA_MD_DECL(SUNSPOT_INPUT_LAGS, "sunspot.input_lags", std::size_t);
+// how many time steps into the future we generate predictions for:
+LIBEA_MD_DECL(SUNSPOT_PREDICTION_HORIZON, "sunspot.prediction_horizon", std::size_t);
 // limit the size of the dataset?
 LIBEA_MD_DECL(SUNSPOT_LIMIT, "sunspot.limit", std::size_t);
 
@@ -152,7 +155,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
             
             // if we have a decimal in the string, we assume that we're reading a double:
             if(regex_match(smat[i][IDX_X], decimal)) {
-                x = static_cast<long>(boost::lexical_cast<double>(smat[i][IDX_X]) * factor);
+                x = static_cast<long>(boost::lexical_cast<double>(smat[i][IDX_X]) * get<SUNSPOT_SCALE>(ea,1.0) * factor);
             } else {
                 // it's already an integer; we're done
                 x = boost::lexical_cast<long>(smat[i][IDX_X]) << get<SUNSPOT_FRACTIONAL_BITS>(ea);
