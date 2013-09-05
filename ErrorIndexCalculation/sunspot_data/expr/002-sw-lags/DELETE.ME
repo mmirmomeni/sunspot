@@ -1,0 +1,103 @@
+#!/bin/sh
+#PBS -q main
+#PBS -l nodes=1:ppn=1,walltime=24:00:00,mem=2049mb
+#PBS -N dsta0_30
+#PBS -o /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30/message.log
+#PBS -j oe
+
+# Give the automounter up to ~2 minutes to try to mount the correct directory
+
+count=1;
+while [ $count -le 64 ]
+do
+  if [ ! -e /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30 ]
+  then
+    sleep $count
+  fi
+  count=$(($count+$count))
+done
+
+# If for some reason the final directory does not exist quit the batch job
+# (of course if this dir does not exist there will be no place to write the
+# the error to)
+
+if ! test -e /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30
+then
+  echo "Could not find /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30"
+  exit 2
+fi
+
+# First try to create a directory on the node's local hard disk
+# if not possible create directory on the shared directory.
+
+mkdir -p /mnt/local/dk_dsta0_30_2590584
+if test ! -e /mnt/local/dk_dsta0_30_2590584
+then
+  echo `hostname`
+  echo "Could not create /mnt/local/dk_dsta0_30_2590584"
+  mkdir -p /mnt/scratch/dk/dsta0_30_2590584
+  if test ! -e /mnt/scratch/dk/dsta0_30_2590584
+  then
+    echo "Cound not create /mnt/scratch/dk/dsta0_30_2590584"
+    exit 1
+  fi
+  export node_dir=/mnt/scratch/dk/dsta0_30_2590584
+else
+  export node_dir=/mnt/local/dk_dsta0_30_2590584
+fi
+cd $node_dir
+cp -r -L /mnt/home/dk/dist_run_tmp_tar_files/Job_35494.tar.gz $node_dir
+tar xzf Job_35494.tar.gz
+rm Job_35494.tar.gz
+
+ssh dev-gfx13 dist_qsub_backfill
+if test -e /mnt/home/dk/bin/sunspot
+then
+  /mnt/home/dk/bin/sunspot -c ealib.cfg --ea.rng.seed 30 --sunspot.integer_bits=11 --sunspot.train_filename=/mnt/home/dk/data/sunspot/dst/train.txt --sunspot.test_filename=/mnt/home/dk/data/sunspot/dst/test.txt 2>&1 | cat >> run.log 
+else
+  echo "Can not find /mnt/home/dk/bin/sunspot"
+fi
+
+# If the user is using the standard archive directory tar it
+
+if test -e $node_dir/data/archive
+then
+  cd $node_dir/data
+    tar cf archive.tar archive
+    rm -rf archive
+fi
+
+# compress all the files and move them back to the final directory
+# if the move is sucessful remove the temporary directory
+
+cd $node_dir ; gzip -r .
+cd $node_dir ; tar czf dist_transfer.tar.gz .
+
+# Give the automounter up to ~2 minutes to try to mount the correct directory
+
+count=1;
+while [ $count -le 64 ]
+do
+  if [ ! -e /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30 ]
+  then
+    sleep $count
+  fi
+  count=$(($count+$count))
+done
+
+if ! test -e /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30
+then
+  echo "Could not find /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30"
+  exit 2
+fi
+
+if mv $node_dir/dist_transfer.tar.gz /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30
+then
+  cd ~
+  rm -rf $node_dir
+  cd /mnt/home/dk/research/src/sunspot/expr/002-sw-lags/dsta0_30
+  if tar xzf dist_transfer.tar.gz
+  then
+    rm dist_transfer.tar.gz
+  fi
+fi
