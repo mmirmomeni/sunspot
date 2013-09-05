@@ -11,4 +11,12 @@ exe sunspot :
     : <include>./include <link>static
     ;
 
-install dist : sunspot : <location>$(HOME)/bin ;
+exe sunspot-direct :
+    src/direct_sunspot.cpp
+    /libea//libea
+    /libea//libea_runner
+    /libmkv//libmkv
+    : <include>./include <link>static
+    ;
+
+install dist : sunspot sunspot-direct : <location>$(HOME)/bin ;

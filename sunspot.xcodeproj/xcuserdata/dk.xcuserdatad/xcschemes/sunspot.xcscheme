@@ -61,11 +61,11 @@
       <CommandLineArguments>
          <CommandLineArgument
             argument = "-c ../etc/ealib.cfg --ea.rng.seed=4 --verbose"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "-l checkpoint-50000.xml.gz"
-            isEnabled = "NO">
+            argument = "-l checkpoint-100000.xml.gz"
+            isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "--override --sunspot.input_lags=1"
@@ -82,6 +82,10 @@
          <CommandLineArgument
             argument = "--analyze causal_graph"
             isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--analyze sunspot_test_predictions"
+            isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>

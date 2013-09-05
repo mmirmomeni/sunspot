@@ -213,7 +213,7 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
      Here the output of the Markov network is interpreted for each of n time steps.
      */
     template <typename Individual, typename RNG, typename EA>
-	dvector_type eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea, bool recurse=false) {
+	dvector_type eval(Individual& ind, matrix_type& output, matrix_type& input, vector_type& observed, RNG& rng, EA& ea) {
         namespace bnu=boost::numeric::ublas;
         mkv::markov_network& net = ealib::phenotype(ind,rng,ea);
 
@@ -283,8 +283,8 @@ struct sunspot_fitness : fitness_function<unary_fitness<double>, constantS, stoc
     }
     
     template <typename Individual, typename RNG, typename EA>
-    dvector_type test(Individual& ind, matrix_type& output, RNG& rng, EA& ea, bool recurse=false) {
-        return eval(ind, output, _test_input, _test_tplus1, rng, ea, recurse);
+    dvector_type test(Individual& ind, matrix_type& output, RNG& rng, EA& ea) {
+        return eval(ind, output, _test_input, _test_tplus1, rng, ea);
     }
     
     //! Calculate fitness of an individual.

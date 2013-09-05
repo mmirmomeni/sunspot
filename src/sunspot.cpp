@@ -115,7 +115,8 @@ public:
         add_tool<sunspot_test_detail>(this);
         add_tool<sunspot_train_rmse>(this);
         add_tool<sunspot_test_rmse>(this);
-        add_tool<sunspot_recursive_test>(this);
+        add_tool<sunspot_train_predictions>(this);
+        add_tool<sunspot_test_predictions>(this);
         add_tool<mkv::causal_graph>(this);
         add_tool<mkv::reduced_graph>(this);
         add_tool<mkv::genetic_graph>(this);
